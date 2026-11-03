@@ -47,7 +47,9 @@ services:
         limits: { memory: 512m }
 
   migrate:
-    build: ../backend
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     image: bullcall-backend:latest
     env_file: ../.env
     environment: &app-env

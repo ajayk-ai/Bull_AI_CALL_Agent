@@ -1,6 +1,6 @@
 """The web process, served on port 8083: REST API under /api/v1.
 
-The voice-gateway routers (Phase 3) and the built frontend (Phase 2) are mounted here as well while
+The built React frontend is served at / and the voice-gateway routers (Phase 3) will be mounted here while
 the platform runs without Nginx. See docs/IMPLEMENTATION_PLAN.md, Section 3.
 """
 
@@ -8,9 +8,12 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import auth, campaigns, contacts, health, imports, org, scripts
 from app.core.config import get_settings
@@ -20,6 +23,12 @@ from app.core.redis import get_redis
 from app.db.session import get_engine
 
 log = logging.getLogger("app.request")
+
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "same-origin",
+}
 
 
 @asynccontextmanager
@@ -62,6 +71,7 @@ def create_app() -> FastAPI:
             request_id_var.reset(token)
         elapsed_ms = round((time.perf_counter() - start) * 1000, 1)
         response.headers["x-request-id"] = request_id[:64]
+        response.headers.update(_SECURITY_HEADERS)
         if not request.url.path.startswith("/api/v1/health"):
             log.info(
                 "%s %s %s",
@@ -82,7 +92,27 @@ def create_app() -> FastAPI:
     for module in (health, auth, org, contacts, imports, scripts, campaigns):
         api.include_router(module.router)
     app.include_router(api)
+    _mount_frontend(app, Path(settings.frontend_dist))
     return app
+
+
+def _mount_frontend(app: FastAPI, dist: Path) -> None:
+    """Serves the built React app. Unknown non-API paths return index.html so client-side routes work."""
+    index = dist / "index.html"
+    if not index.is_file():
+        log.warning("Frontend build not found at %s; serving the API only", dist)
+        return
+    root = dist.resolve()
+    app.mount("/assets", StaticFiles(directory=root / "assets"), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str) -> FileResponse:
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        candidate = (root / path).resolve()
+        if path and candidate.is_file() and root in candidate.parents:
+            return FileResponse(candidate)
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
 
 app = create_app()

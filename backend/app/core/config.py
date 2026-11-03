@@ -31,6 +31,9 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = []
 
+    # Built React app (npm run build). Served at / when present.
+    frontend_dist: str = "../frontend/dist"
+
     # File storage (uploaded imports now, call recordings from Phase 3). "local" = a directory / Docker volume.
     storage_backend: Literal["local"] = "local"
     storage_root: str = "../var/storage"

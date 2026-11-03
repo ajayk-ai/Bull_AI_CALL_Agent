@@ -11,8 +11,8 @@ The design, decisions and roadmap are in [docs/IMPLEMENTATION_PLAN.md](docs/IMPL
 | Phase | Scope | State |
 |---|---|---|
 | 1. Foundation | Database (all 22 tables, Alembic), JWT auth, users, departments, RBAC with department isolation, contacts, consent, do-not-call, audit log, health checks, Docker | Done |
-| 2a. Campaigns and scripts (backend) | Excel/CSV import with column mapping, script builder with versions and approval, campaigns with approval, SCM script, encrypted file storage | Done, 92 tests passing |
-| 2b. First UI | React screens for the above | Next |
+| 2. Campaigns and scripts | Excel/CSV upload with column mapping, script builder with versions and approval, campaigns with approval, SCM script, encrypted file storage, React UI | Done: 93 backend + 10 frontend tests, browser walkthrough |
+| 3. Real-time voice POC | FreJun Teler + Gemini Live, single real call | Next |
 | 3. Real-time voice POC | Telephony adapter, voice gateway, single real call | Not started |
 
 No calling features exist yet. Nothing in this repository places phone calls.
@@ -34,6 +34,7 @@ backend/
     cli.py       create the first admin and departments, load seed scripts
   alembic/       migrations
   tests/         unit and integration tests (real PostgreSQL and Redis)
+frontend/        React + TypeScript + Tailwind (Vite); built into the app image and served at /
 deploy/
   docker-compose.yml       postgres, redis, migrate, app (port 8083)
   docker-compose.dev.yml   publishes postgres and redis on localhost for development
@@ -59,6 +60,16 @@ uv run uvicorn app.main:app --port 8083 --reload
 ```
 
 API documentation: http://127.0.0.1:8083/api/v1/docs
+
+Frontend (needs Node 22), in a second terminal:
+
+```bash
+cd frontend
+npm ci
+npm run dev        # http://127.0.0.1:5173, proxies /api to port 8083
+npm test           # unit tests
+npm run build      # production build into frontend/dist, which the backend serves at /
+```
 
 ### Tests
 
