@@ -1,0 +1,10 @@
+# Development only: publishes PostgreSQL and Redis on localhost so the app and tests can run on the host.
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env up -d postgres redis
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:55433:5432"
+  redis:
+    ports:
+      - "127.0.0.1:56379:6379"
