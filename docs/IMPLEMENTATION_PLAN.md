@@ -1,6 +1,6 @@
 # Bull AI Voice Calling Platform: Implementation Plan
 
-Status: Approved to proceed, 3 November 2026. D1 to D4 taken as recommended; D5 is a Cloudflare tunnel (no Nginx, port 8083).
+Status: Approved to proceed, 3 November 2026. Decisions D1 to D5 confirmed, see Section 2.1.
 Progress: Phase 1 complete (see README). Phase 2 next.
 
 ---
@@ -71,6 +71,22 @@ These points drive Decisions D1 to D3 below.
 | D3 | Relationship to PO Agent | (a) New platform replaces PO Agent's voice step over time. (b) Both run; platform takes SCM delivery confirmation, PO Agent keeps its escalation flow. (c) Platform starts with a non-SCM use case. | **(a), with a shared suppression check during overlap.** Needs the SCM owner's agreement. |
 | D4 | PostgreSQL | (a) Container, as the brief says. (b) Existing host PostgreSQL 18. | **(a)**. Isolates data, backups and upgrades from other applications. Not published to the host. |
 | D5 | Public HTTPS endpoint | (a) Domain + certificate from IT. (b) Cloudflare tunnel to port 8083 (as PO Agent does). | **(b) for now**, since Nginx is deferred; (a) when Nginx is introduced. Telephony providers must reach the webhook and media WebSocket over HTTPS/WSS. |
+
+### 2.1 Decisions confirmed (3 November 2026)
+
+| # | Decision |
+|---|---|
+| D1 | Speech-to-speech with Gemini Live native audio. The cascaded engine is not planned; the `VoiceEngine` interface is kept so it can be added later if Phase 3 shows a need. |
+| D2 | FreJun Teler is the first and only telephony provider for now. Exotel is not planned; the `TelephonyProvider` interface is kept. |
+| D3 | The platform is independent of PO Agent and has its own separate database. No data is shared between them. |
+| D4 | PostgreSQL in this platform's own container (`bullcall-postgres-1`), separate from the host PostgreSQL and from PO Agent. |
+| D5 | Cloudflare tunnel to port 8083, as PO Agent does. No Nginx for now. |
+
+Consequence of D3: neither system knows what the other has called. While both are active, the same supplier can
+receive a call from each. This is managed operationally (for example, SCM does not load the same suppliers into
+both) rather than in code.
+
+Phase 3b (Exotel adapter, cascaded engine, provider evaluation) is dropped from the roadmap following D1 and D2.
 
 ---
 
@@ -209,7 +225,7 @@ Each milestone ends with tests passing and a short demo. A feature is reported c
 | **1. Foundation** | Repo structure, Compose dev stack (postgres, redis, minio), settings, logging, Alembic baseline, all core tables, JWT auth, users, departments, RBAC, audit log, contacts CRUD, DNC, consent, health checks | Unit + integration tests green; OpenAPI at `/api/v1/docs`; department isolation test proves HOD of dept A cannot read dept B |
 | **2. Campaigns and scripts** | Excel/CSV import with row-level error report, duplicate detection, import history, campaigns CRUD and state machine, script builder API, versioning, approval workflow, SCM delivery confirmation script and extraction schema as seed data; minimal React UI for these | Import of a 500-row file with deliberate errors yields the exact error report; a published script version cannot be edited |
 | **3a. Voice POC (single call)** | `TelephonyProvider` + mock + FreJun adapter, voice gateway, FSM, Gemini Live engine, tool gating, transcript and recording to MinIO, individual call API | **10 real calls** to internal test numbers (Tamil, English, Hindi, mixed) with transcripts, recordings and latency report. Mock-mode tests in CI |
-| **3b. Provider evaluation** | Exotel adapter, cascaded engine (ASR + LLM + TTS), side-by-side test harness | Written evaluation report; provider decision signed off |
+| ~~3b. Provider evaluation~~ | Dropped (D1, D2). Language quality for Hindi and Tamil-English mix is still measured in Phase 3a calls | |
 | **4. Bulk calling** | Celery dispatch, concurrency limit (5), calling window, retries, pause/resume/cancel, idempotent webhooks, live campaign progress WebSocket | 100-call campaign against mock completes with correct retry counts; 20-call live campaign to internal numbers |
 | **5. AI intelligence** | Post-call extraction, schema validation, evidence linking, confidence routing to human review queue, summaries, follow-up tasks | Extraction accuracy measured against hand-labelled transcripts from Phase 3/4 calls |
 | **6. Enterprise deployment** | Dashboard and filters, transcript/recording/result viewers, retention jobs, backups, production Compose, deployment guide, UAT. Nginx + TLS + split voice-gateway container only if decided by then | UAT sign-off by SCM; compliance sign-off (Section 9) |
@@ -247,7 +263,7 @@ These are flagged, not resolved. The platform will implement the controls; wheth
 | Python 3.14 compatibility of Celery, asyncpg and audio libraries | Verify in Phase 1. Fall back to 3.13 in containers if any core dependency fails. |
 | Speech-to-speech gives less control over exact wording of PO numbers and dates | Read-back confirmation step in FSM; extraction validated against contact data (PO number must match the campaign record) |
 | Hindi and code-mixed speech quality unproven with current stack | Phase 3b evaluation; cascaded engine as fallback |
-| Duplicate supplier calls from PO Agent and this platform | Decision D3; shared suppression check |
+| Duplicate supplier calls from PO Agent and this platform | Separate databases (D3), so managed operationally: SCM decides which system calls which suppliers |
 | Provider webhook or media stream outages | Idempotent events, FSM timeouts, call marked `FAILED_PROVIDER` and retried per campaign rules |
 
 ---
