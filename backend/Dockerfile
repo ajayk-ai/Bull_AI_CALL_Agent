@@ -13,7 +13,7 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
 
-RUN useradd --system --uid 10001 bullcall && chown -R bullcall /srv
+RUN useradd --system --uid 10001 bullcall && mkdir -p /srv/var/storage && chown -R bullcall /srv
 USER bullcall
 
 EXPOSE 8083

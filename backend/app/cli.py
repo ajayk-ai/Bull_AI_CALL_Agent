@@ -2,6 +2,7 @@
 
     python -m app.cli create-admin --email admin@bullmachine.com --name "Platform Admin"
     python -m app.cli create-department --code SCM --name "Supply Chain Management"
+    python -m app.cli seed-scm-script --department SCM
 
 The admin password is read from the prompt (or ADMIN_PASSWORD), never from the command line.
 """
@@ -12,10 +13,15 @@ import getpass
 import os
 import sys
 
+from sqlalchemy import select
+
 from app.core.security import hash_password
 from app.db.session import get_engine, get_sessionmaker
 from app.models.enums import Role
 from app.models.org import Department, User
+from app.models.scripts import Script, ScriptVersion
+from app.schemas.scripts import ScriptVersionBody
+from app.seeds import scm_delivery
 from app.services import audit
 from app.services.auth import find_by_email
 
@@ -59,6 +65,42 @@ async def create_department(code: str, name: str) -> None:
         print(f"Department created: {department.code} ({department.id})")
 
 
+async def seed_scm_script(department_code: str) -> None:
+    """Creates the SCM delivery confirmation script as a draft version 1. It still needs approval."""
+    body = ScriptVersionBody(config=scm_delivery.CONFIG, extraction_schema=scm_delivery.EXTRACTION_SCHEMA)
+    async with get_sessionmaker()() as session:
+        department = await session.scalar(select(Department).where(Department.code == department_code.upper()))
+        if department is None:
+            sys.exit(f"No department with code {department_code}")
+        if await session.scalar(
+            select(Script.id).where(Script.department_id == department.id, Script.name == scm_delivery.NAME)
+        ):
+            sys.exit(f"Script {scm_delivery.NAME!r} already exists in {department.code}")
+        script = Script(department_id=department.id, name=scm_delivery.NAME, description=scm_delivery.DESCRIPTION)
+        session.add(script)
+        await session.flush()
+        version = ScriptVersion(
+            script_id=script.id,
+            version_no=1,
+            config=body.config.model_dump(mode="json"),
+            extraction_schema=body.extraction_schema,
+        )
+        session.add(version)
+        await session.flush()
+        audit.record(
+            session,
+            None,
+            "script.create",
+            actor_email="cli",
+            entity_type="script",
+            entity_id=script.id,
+            department_id=department.id,
+            changes={"name": script.name, "version_id": version.id, "via": "cli seed"},
+        )
+        await session.commit()
+        print(f"Draft script created: {script.name} ({script.id}), version 1 ({version.id}). Submit it for approval.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -68,6 +110,8 @@ def main() -> None:
     dept = commands.add_parser("create-department")
     dept.add_argument("--code", required=True)
     dept.add_argument("--name", required=True)
+    seed = commands.add_parser("seed-scm-script")
+    seed.add_argument("--department", required=True, help="department code, e.g. SCM")
     args = parser.parse_args()
 
     if args.command == "create-admin":
@@ -75,8 +119,10 @@ def main() -> None:
         if len(password) < 10:
             sys.exit("Password must be at least 10 characters")
         coro = create_admin(args.email, args.name, password)
-    else:
+    elif args.command == "create-department":
         coro = create_department(args.code, args.name)
+    else:
+        coro = seed_scm_script(args.department)
 
     async def run() -> None:
         try:

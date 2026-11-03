@@ -78,3 +78,14 @@ def decrypt(token: str) -> str:
         return _fernet().decrypt(token.encode()).decode()
     except InvalidToken:
         raise ValueError("Cannot decrypt value: wrong DATA_ENCRYPTION_KEY or corrupted data")
+
+
+def encrypt_bytes(data: bytes) -> bytes:
+    return _fernet().encrypt(data)
+
+
+def decrypt_bytes(token: bytes) -> bytes:
+    try:
+        return _fernet().decrypt(token)
+    except InvalidToken:
+        raise ValueError("Cannot decrypt file: wrong DATA_ENCRYPTION_KEY or corrupted data")

@@ -5,6 +5,7 @@ Needs the dev containers:  docker compose -f deploy/docker-compose.yml -f deploy
 """
 
 import os
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -24,6 +25,7 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["APP_ENV"] = "test"
 os.environ["LOG_JSON"] = "false"
 os.environ["LOG_LEVEL"] = "WARNING"
+os.environ["STORAGE_ROOT"] = tempfile.mkdtemp(prefix="bullcall-test-storage-")
 _redis = urlsplit(_env["REDIS_URL"])
 os.environ["REDIS_URL"] = urlunsplit(_redis._replace(path="/15"))
 

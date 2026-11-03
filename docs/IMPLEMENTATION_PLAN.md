@@ -1,7 +1,7 @@
 # Bull AI Voice Calling Platform: Implementation Plan
 
 Status: Approved to proceed, 3 November 2026. Decisions D1 to D5 confirmed, see Section 2.1.
-Progress: Phase 1 complete (see README). Phase 2 next.
+Progress: Phase 1 complete. Phase 2 backend complete; Phase 2 UI next. MinIO replaced by encrypted local storage (images no longer published).
 
 ---
 

@@ -31,6 +31,30 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = []
 
+    # File storage (uploaded imports now, call recordings from Phase 3). "local" = a directory / Docker volume.
+    storage_backend: Literal["local"] = "local"
+    storage_root: str = "../var/storage"
+
+    # Contact imports
+    import_max_bytes: int = 10 * 1024 * 1024
+    import_max_rows: int = 10_000
+
+    # Platform-wide cap on simultaneous calls; a campaign's own limit cannot exceed it.
+    max_concurrent_calls: int = 5
+
+    # Languages campaigns and contacts may use (BCP-47), and the names accepted for them in uploaded files.
+    supported_languages: list[str] = ["ta-IN", "en-IN", "hi-IN"]
+    language_aliases: dict[str, str] = {
+        "tamil": "ta-IN",
+        "english": "en-IN",
+        "hindi": "hi-IN",
+        "telugu": "te-IN",
+        "kannada": "kn-IN",
+        "malayalam": "ml-IN",
+        "marathi": "mr-IN",
+        "bengali": "bn-IN",
+    }
+
     @field_validator("jwt_secret", "phone_hash_key")
     @classmethod
     def _long_enough(cls, value: SecretStr) -> SecretStr:

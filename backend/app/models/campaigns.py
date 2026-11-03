@@ -65,12 +65,22 @@ class CampaignImport(UUIDPk, Base):
     department_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("departments.id"), index=True)
     campaign_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("campaigns.id"), index=True)
     file_name: Mapped[str] = mapped_column(String(255))
+    # The uploaded file, encrypted, in object storage.
     object_key: Mapped[str | None] = mapped_column(String(512))
+    file_size_bytes: Mapped[int | None]
+    headers: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    # Column mapping and options used when the file was processed.
+    column_mapping: Mapped[dict | None] = mapped_column(JSONB)
+    options: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
+    new_contacts: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    updated_contacts: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    campaign_contacts: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     status: Mapped[ImportStatus] = mapped_column(str_enum(ImportStatus, "import_status"), default=ImportStatus.UPLOADED)
     total_rows: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     valid_rows: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     error_rows: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     duplicate_rows: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    # [{"row": 5, "field": "phone", "message": "...", "level": "error" | "warning"}]
     errors: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

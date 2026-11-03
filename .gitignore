@@ -15,3 +15,6 @@ wheels/
 .pytest_cache/
 .ruff_cache/
 node_modules/
+
+# Local file storage (development)
+var/

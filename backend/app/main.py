@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import auth, contacts, health, org
+from app.api.v1 import auth, campaigns, contacts, health, imports, org, scripts
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
@@ -79,7 +79,7 @@ def create_app() -> FastAPI:
         return response
 
     api = APIRouter(prefix="/api/v1")
-    for module in (health, auth, org, contacts):
+    for module in (health, auth, org, contacts, imports, scripts, campaigns):
         api.include_router(module.router)
     app.include_router(api)
     return app

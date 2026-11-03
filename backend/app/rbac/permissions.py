@@ -26,6 +26,13 @@ class Permission(StrEnum):
     DNC_DELETE = "dnc:delete"
     DNC_GLOBAL = "dnc:global"
     AUDIT_READ = "audit:read"
+    IMPORTS_WRITE = "imports:write"
+    SCRIPTS_READ = "scripts:read"
+    SCRIPTS_WRITE = "scripts:write"
+    SCRIPTS_APPROVE = "scripts:approve"
+    CAMPAIGNS_READ = "campaigns:read"
+    CAMPAIGNS_WRITE = "campaigns:write"
+    CAMPAIGNS_APPROVE = "campaigns:approve"
 
 
 _OPERATOR = {
@@ -34,10 +41,15 @@ _OPERATOR = {
     Permission.DNC_READ,
     # Operators record opt-out requests, so they can add (not remove) DNC entries.
     Permission.DNC_WRITE,
+    Permission.SCRIPTS_READ,
+    Permission.CAMPAIGNS_READ,
 }
 _CAMPAIGN_MANAGER = _OPERATOR | {
     Permission.CONTACTS_WRITE,
     Permission.CONTACTS_DELETE,
+    Permission.IMPORTS_WRITE,
+    Permission.SCRIPTS_WRITE,
+    Permission.CAMPAIGNS_WRITE,
 }
 _HOD = _CAMPAIGN_MANAGER | {
     Permission.USERS_READ,
@@ -45,6 +57,8 @@ _HOD = _CAMPAIGN_MANAGER | {
     Permission.CONTACTS_VIEW_FULL_NUMBER,
     Permission.DNC_DELETE,
     Permission.AUDIT_READ,
+    Permission.SCRIPTS_APPROVE,
+    Permission.CAMPAIGNS_APPROVE,
 }
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
