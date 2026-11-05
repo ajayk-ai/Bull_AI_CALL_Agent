@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, EmailStr, StringConstraints
+from pydantic import AliasChoices, BaseModel, EmailStr, Field, StringConstraints
 
 from app.models.enums import Role
 from app.schemas.common import Name, ORMModel, Password
@@ -12,8 +12,15 @@ DepartmentCode = Annotated[
 ]
 
 
+# The user ID people sign in with: letters, digits, dot, dash, underscore. Stored lower-case.
+UserId = Annotated[
+    str, StringConstraints(strip_whitespace=True, to_lower=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$")
+]
+
+
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # User ID or e-mail. ("email" is still accepted as the field name.)
+    login: str = Field(validation_alias=AliasChoices("login", "username", "email"), min_length=1, max_length=320)
     password: str
 
 
@@ -52,33 +59,48 @@ class DepartmentOut(ORMModel):
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    username: UserId
     full_name: Name
-    password: Password
+    email: EmailStr | None = None
     role: Role
     department_id: uuid.UUID | None = None
+    # Leave empty to have a password generated. Either way it is shown once and must be changed at first sign-in.
+    password: Password | None = None
 
 
 class UserUpdate(BaseModel):
     full_name: Name | None = None
+    email: EmailStr | None = None
     role: Role | None = None
     department_id: uuid.UUID | None = None
     is_active: bool | None = None
 
 
 class PasswordReset(BaseModel):
-    new_password: Password
+    # Leave empty to have one generated.
+    new_password: Password | None = None
 
 
 class UserOut(ORMModel):
     id: uuid.UUID
-    email: str
+    username: str
+    email: str | None
     full_name: str
     role: Role
     department_id: uuid.UUID | None
     is_active: bool
+    must_change_password: bool
     last_login_at: datetime | None
     created_at: datetime
+    # Locked after repeated failed sign-ins (clears by itself after 15 minutes, or an admin unlocks it).
+    locked: bool = False
+
+
+class UserCredentials(BaseModel):
+    """Returned once, when an admin creates an account or resets a password. Never stored in clear text."""
+
+    user: UserOut
+    temporary_password: str
 
 
 class MeOut(UserOut):

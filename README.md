@@ -12,8 +12,7 @@ The design, decisions and roadmap are in [docs/IMPLEMENTATION_PLAN.md](docs/IMPL
 |---|---|---|
 | 1. Foundation | Database (all 22 tables, Alembic), JWT auth, users, departments, RBAC with department isolation, contacts, consent, do-not-call, audit log, health checks, Docker | Done |
 | 2. Campaigns and scripts | Excel/CSV upload with column mapping, script builder with versions and approval, campaigns with approval, SCM script, encrypted file storage, React UI | Done |
-| 3. Real-time voice POC | FreJun (Teler) + Gemini Live call pipeline, call state machine and guards, signed webhooks, individual calls (API + UI), mock mode | Built and tested in simulation (122 backend + 10 frontend tests, browser walkthrough). **No real call made yet**: waiting for credentials |
-| 3. Real-time voice POC | Telephony adapter, voice gateway, single real call | Not started |
+| 3. Real-time voice POC | FreJun (Teler) + Gemini Live call pipeline, call state machine and guards, signed webhooks, individual calls (API + UI), mock mode | Built and tested in simulation (125 backend + 10 frontend tests, browser walkthroughs). **No real call made yet**: waiting for credentials |
 
 Calling is **off** by default (`TELEPHONY_MODE=disabled`). No real call has been placed yet; see
 "Making the first real call" below.
@@ -57,7 +56,7 @@ cd backend
 uv sync
 uv run alembic upgrade head
 uv run python -m app.cli create-department --code SCM --name "Supply Chain Management"
-uv run python -m app.cli create-admin --email you@bullmachine.com --name "Your Name"   # prompts for password
+uv run python -m app.cli create-admin --user-id admin --name "Your Name"   # prompts for password
 uv run python -m app.cli seed-scm-script --department SCM   # draft; submit and approve it in the app
 uv run uvicorn app.main:app --port 8083 --reload
 ```
@@ -99,12 +98,29 @@ uv run alembic upgrade head
 
 ```bash
 docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
-docker compose -f deploy/docker-compose.yml --env-file .env exec app python -m app.cli create-admin --email ... --name ...
+docker compose -f deploy/docker-compose.yml --env-file .env exec app python -m app.cli create-admin --user-id admin --name "..."
 ```
 
 The `migrate` service applies migrations before `app` starts. Only the app is published, on
 `${APP_BIND_ADDRESS}:8083` (default `127.0.0.1`). PostgreSQL and Redis are reachable only inside the Docker network.
 There is no Nginx for now; HTTPS is provided by a Cloudflare tunnel to port 8083 (see the plan, Section 8).
+
+## Accounts and access
+
+One platform serves every department. **Only admins create accounts and grant access** (Admin > Users and access):
+
+- Each account has a **user ID** for signing in (e-mail is optional and also accepted at sign-in), a role and,
+  except for admins, a department. The role decides what the person can do (table below); the department
+  decides which records they see.
+- The admin types a password or has one generated. It is shown once, to pass on to the user, and the user must
+  choose their own at first sign-in before they can do anything else.
+- The admin can edit name, e-mail, role and department, reset a password (the user is signed out and gets a new
+  temporary one), unlock an account after five failed sign-ins, and deactivate or reactivate it. The last active
+  admin cannot be removed, and nobody can change their own role or deactivate themselves.
+- Every user can change their own password (header > Change password). Every account action is in the audit log;
+  passwords never are.
+
+The first admin is created on the server with the CLI command above; after that, everything is done in the app.
 
 ## How the main workflows run
 
@@ -164,7 +180,7 @@ FreJun  --POST /telephony/frejun/status--> app: ringing / no-answer / completed 
 
 | Permission | Operator | Campaign Manager | HOD | Admin |
 |---|:-:|:-:|:-:|:-:|
-| Read contacts, scripts and campaigns; record consent; add DNC entries | ✓ | ✓ | ✓ | ✓ |
+| Read contacts, scripts and campaigns; place individual calls; record consent; add DNC entries | ✓ | ✓ | ✓ | ✓ |
 | Create, edit, delete contacts; upload files; write scripts and campaigns | | ✓ | ✓ | ✓ |
-| Approve scripts and campaigns, view full phone numbers, remove DNC entries, manage users, read audit log | | | ✓ (own dept) | ✓ |
-| Global DNC entries, manage departments | | | | ✓ |
+| Approve scripts and campaigns, view full phone numbers, remove DNC entries, see the department's users, read audit log | | | ✓ (own dept) | ✓ |
+| Create accounts and grant access, manage departments, global DNC entries | | | | ✓ |

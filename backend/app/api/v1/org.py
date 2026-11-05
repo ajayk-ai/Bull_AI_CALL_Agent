@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import ContextDep, CurrentUser, SessionDep, require
+from app.models.enums import Role
 from app.models.org import User
 from app.rbac.permissions import Permission
 from app.schemas.common import Page, PageParams
@@ -13,6 +14,7 @@ from app.schemas.org import (
     DepartmentUpdate,
     PasswordReset,
     UserCreate,
+    UserCredentials,
     UserOut,
     UserUpdate,
 )
@@ -48,13 +50,22 @@ async def update_department(
 
 
 @router.get("/users", response_model=Page[UserOut])
-async def list_users(user: ReadUsers, session: SessionDep, params: Annotated[PageParams, Query()]):
-    items, total = await org.list_users(session, user, params)
+async def list_users(
+    user: ReadUsers,
+    session: SessionDep,
+    params: Annotated[PageParams, Query()],
+    search: Annotated[str | None, Query(max_length=100, description="User ID, name or e-mail")] = None,
+    department_id: uuid.UUID | None = None,
+    role: Role | None = None,
+    is_active: bool | None = None,
+):
+    items, total = await org.list_users(session, user, params, search, department_id, role, is_active)
     return Page(items=items, total=total, page=params.page, page_size=params.page_size)
 
 
-@router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post("/users", response_model=UserCredentials, status_code=status.HTTP_201_CREATED)
 async def create_user(body: UserCreate, user: ManageUsers, session: SessionDep, ctx: ContextDep):
+    """Admin only. Returns the temporary password once; the user must change it at first sign-in."""
     return await org.create_user(session, user, body, ctx)
 
 
@@ -68,8 +79,14 @@ async def update_user(user_id: uuid.UUID, body: UserUpdate, user: ManageUsers, s
     return await org.update_user(session, user, user_id, body, ctx)
 
 
-@router.post("/users/{user_id}/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/users/{user_id}/reset-password", response_model=UserCredentials)
 async def reset_password(
     user_id: uuid.UUID, body: PasswordReset, user: ManageUsers, session: SessionDep, ctx: ContextDep
-) -> None:
-    await org.reset_password(session, user, user_id, body.new_password, ctx)
+):
+    """Sets a temporary password (generated if none is given), signs the user out and unlocks the account."""
+    return await org.reset_password(session, user, user_id, body.new_password, ctx)
+
+
+@router.post("/users/{user_id}/unlock", response_model=UserOut)
+async def unlock_user(user_id: uuid.UUID, user: ManageUsers, session: SessionDep, ctx: ContextDep):
+    return await org.unlock(session, user, user_id, ctx)

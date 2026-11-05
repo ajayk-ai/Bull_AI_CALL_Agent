@@ -41,7 +41,7 @@ def record(
 ) -> AuditLog:
     entry = AuditLog(
         actor_id=actor.id if actor else None,
-        actor_email=actor.email if actor else actor_email,
+        actor_email=(actor.email or actor.username) if actor else actor_email,
         department_id=department_id,
         action=action,
         entity_type=entity_type,

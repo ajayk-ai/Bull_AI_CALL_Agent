@@ -7,6 +7,7 @@ import { AuditPage } from "./pages/Audit";
 import { CallDetailPage } from "./pages/CallDetail";
 import { CallsPage } from "./pages/Calls";
 import { CampaignDetailPage } from "./pages/CampaignDetail";
+import { ChangePasswordPage, ForcedPasswordChange } from "./pages/ChangePassword";
 import { CampaignsPage } from "./pages/Campaigns";
 import { ContactsPage } from "./pages/Contacts";
 import { DepartmentsPage } from "./pages/Departments";
@@ -22,6 +23,7 @@ function Routed() {
   const { me, loading } = useAuth();
   if (loading) return <Loading />;
   if (!me) return <LoginPage />;
+  if (me.must_change_password) return <ForcedPasswordChange />;
   return (
     <Routes>
       <Route element={<Layout />}>
@@ -40,6 +42,7 @@ function Routed() {
         <Route path="users" element={<UsersPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="audit" element={<AuditPage />} />
+        <Route path="account/password" element={<ChangePasswordPage />} />
         <Route path="*" element={<Navigate to="/campaigns" replace />} />
       </Route>
     </Routes>

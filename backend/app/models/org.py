@@ -19,11 +19,15 @@ class Department(UUIDPk, Timestamps, Base):
 class User(UUIDPk, Timestamps, Base):
     __tablename__ = "users"
     __table_args__ = (
-        Index("uq_users_email_lower", text("lower(email)"), unique=True),
+        Index("uq_users_username_lower", text("lower(username)"), unique=True),
+        Index("uq_users_email_lower", text("lower(email)"), unique=True, postgresql_where=text("email IS NOT NULL")),
         CheckConstraint("role = 'admin' OR department_id IS NOT NULL", name="department_required"),
     )
 
-    email: Mapped[str] = mapped_column(String(320))
+    # The user ID people sign in with. Stored lower-case.
+    username: Mapped[str] = mapped_column(String(64))
+    # Optional: not everyone has a company e-mail. Also accepted at sign-in.
+    email: Mapped[str | None] = mapped_column(String(320))
     full_name: Mapped[str] = mapped_column(String(200))
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(str_enum(Role, "user_role"))
@@ -33,5 +37,7 @@ class User(UUIDPk, Timestamps, Base):
     # Incremented on password change or deactivation; tokens carrying an older value are rejected.
     token_version: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when an admin chooses the password; the user must pick their own before doing anything else.
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
     department: Mapped[Department | None] = relationship(lazy="joined")

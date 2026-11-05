@@ -21,7 +21,16 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 _bearer = HTTPBearer(auto_error=False)
 
 
+# Reachable while the user still has to replace a password the admin set.
+_ALLOWED_BEFORE_PASSWORD_CHANGE = {"/api/v1/auth/me", "/api/v1/auth/change-password"}
+
+
+class PasswordChangeRequired(Forbidden):
+    code = "password_change_required"
+
+
 async def get_current_user(
+    request: Request,
     session: SessionDep,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> User:
@@ -31,6 +40,8 @@ async def get_current_user(
     user = await session.get(User, uuid.UUID(payload["sub"]))
     if user is None or not user.is_active or user.token_version != payload["ver"]:
         raise Unauthorized("Session is no longer valid")
+    if user.must_change_password and request.url.path not in _ALLOWED_BEFORE_PASSWORD_CHANGE:
+        raise PasswordChangeRequired("Choose a new password before continuing")
     return user
 
 

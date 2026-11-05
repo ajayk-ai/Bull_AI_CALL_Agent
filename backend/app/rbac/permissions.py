@@ -56,8 +56,7 @@ _CAMPAIGN_MANAGER = _OPERATOR | {
     Permission.CAMPAIGNS_WRITE,
 }
 _HOD = _CAMPAIGN_MANAGER | {
-    Permission.USERS_READ,
-    Permission.USERS_MANAGE,
+    Permission.USERS_READ,  # their department's users; creating accounts and granting access is admin-only
     Permission.CONTACTS_VIEW_FULL_NUMBER,
     Permission.DNC_DELETE,
     Permission.AUDIT_READ,
@@ -70,12 +69,6 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.CAMPAIGN_MANAGER: frozenset(_CAMPAIGN_MANAGER),
     Role.HOD: frozenset(_HOD),
     Role.ADMIN: frozenset(Permission),
-}
-
-# Roles a user of each role may assign when creating or editing users.
-ASSIGNABLE_ROLES: dict[Role, frozenset[Role]] = {
-    Role.ADMIN: frozenset(Role),
-    Role.HOD: frozenset({Role.CAMPAIGN_MANAGER, Role.OPERATOR}),
 }
 
 

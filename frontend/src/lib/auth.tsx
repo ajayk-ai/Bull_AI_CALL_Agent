@@ -6,7 +6,8 @@ import type { Me } from "./types";
 interface AuthState {
   me: Me | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (login: string, password: string) => Promise<void>;
+  refreshMe: () => Promise<void>;
   signOut: () => void;
   can: (permission: string) => boolean;
 }
@@ -35,15 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const result = await api.post<{ access_token: string; refresh_token: string }>("/auth/login", { email, password });
+  const signIn = useCallback(async (login: string, password: string) => {
+    const result = await api.post<{ access_token: string; refresh_token: string }>("/auth/login", { login, password });
     tokens.set(result.access_token, result.refresh_token);
     setMe(await api.get<Me>("/auth/me"));
   }, []);
 
+  const refreshMe = useCallback(async () => setMe(await api.get<Me>("/auth/me")), []);
+
   const can = useCallback((permission: string) => !!me?.permissions.includes(permission), [me]);
 
-  return <AuthContext.Provider value={{ me, loading, signIn, signOut, can }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ me, loading, signIn, signOut, can, refreshMe }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

@@ -11,10 +11,12 @@ export interface Page<T> {
 
 export interface Me {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   full_name: string;
   role: Role;
   department_id: string | null;
+  must_change_password: boolean;
   permissions: string[];
 }
 
@@ -27,12 +29,21 @@ export interface Department {
 
 export interface User {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   full_name: string;
   role: Role;
   department_id: string | null;
   is_active: boolean;
+  must_change_password: boolean;
+  locked: boolean;
   last_login_at: string | null;
+  created_at: string;
+}
+
+export interface UserCredentials {
+  user: User;
+  temporary_password: string;
 }
 
 export interface Contact {

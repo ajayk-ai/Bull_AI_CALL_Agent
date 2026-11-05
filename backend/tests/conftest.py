@@ -123,6 +123,7 @@ def make_user(client: AsyncClient):
         email = email or f"{role}-{uuid.uuid4().hex[:8]}@example.com"
         async with get_sessionmaker()() as session:
             user = User(
+                username=email.split("@")[0].lower(),
                 email=email,
                 full_name=f"Test {role}",
                 password_hash=hash_password(PASSWORD),
