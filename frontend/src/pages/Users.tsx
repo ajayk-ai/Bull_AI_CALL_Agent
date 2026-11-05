@@ -193,7 +193,7 @@ export function UsersPage() {
 function CredentialsPanel({ credentials, onClose }: { credentials: UserCredentials; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const { user, temporary_password } = credentials;
-  const text = `Bull AI Calling\nAddress: ${window.location.origin}\nUser ID: ${user.username}\nTemporary password: ${temporary_password}\nYou will be asked to choose your own password at first sign-in.`;
+  const text = `Bull AI Calling\nAddress: ${window.location.origin}${import.meta.env.BASE_URL}\nUser ID: ${user.username}\nTemporary password: ${temporary_password}\nYou will be asked to choose your own password at first sign-in.`;
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);

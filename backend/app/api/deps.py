@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.context import RequestContext
 from app.core.errors import Forbidden, Unauthorized
 from app.core.logging import request_id_var
+from app.core.paths import route_path
 from app.core.security import decode_token
 from app.db.session import get_session
 from app.models.org import User
@@ -40,7 +41,7 @@ async def get_current_user(
     user = await session.get(User, uuid.UUID(payload["sub"]))
     if user is None or not user.is_active or user.token_version != payload["ver"]:
         raise Unauthorized("Session is no longer valid")
-    if user.must_change_password and request.url.path not in _ALLOWED_BEFORE_PASSWORD_CHANGE:
+    if user.must_change_password and route_path(request.scope) not in _ALLOWED_BEFORE_PASSWORD_CHANGE:
         raise PasswordChangeRequired("Choose a new password before continuing")
     return user
 

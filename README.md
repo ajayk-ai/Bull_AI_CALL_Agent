@@ -103,7 +103,21 @@ docker compose -f deploy/docker-compose.yml --env-file .env exec app python -m a
 
 The `migrate` service applies migrations before `app` starts. Only the app is published, on
 `${APP_BIND_ADDRESS}:8083` (default `127.0.0.1`). PostgreSQL and Redis are reachable only inside the Docker network.
-There is no Nginx for now; HTTPS is provided by a Cloudflare tunnel to port 8083 (see the plan, Section 8).
+
+**Public address: https://ai.bullmachine.in/aicall/**. The server's shared host nginx (the same one that serves
+`/costing/` and `/voicecall/`) passes `/aicall/` to 127.0.0.1:8083. The whole app, including the API
+(`/aicall/api/v1/...`) and the FreJun webhooks (`/aicall/telephony/...`), lives under `BASE_PATH=/aicall` from
+`.env`. The frontend is built for that prefix, so changing `BASE_PATH` needs `up -d --build`. Directly on the
+server the app is at http://127.0.0.1:8083/aicall/.
+
+The nginx site file is kept at `~/nginx/ai.bullmachine.in` and installed with:
+
+```bash
+sudo cp ~/nginx/ai.bullmachine.in /etc/nginx/sites-available/ai.bullmachine.in
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+For local development, `BASE_PATH` can be left empty (the app is then served at `/`).
 
 ## Accounts and access
 
@@ -158,9 +172,8 @@ FreJun  --POST /telephony/frejun/status--> app: ringing / no-answer / completed 
 ### Making the first real call
 
 1. Put the FreJun and Gemini values in `.env`: `TELER_API_KEY`, `FREJUN_PHONE_NUMBER`, `GEMINI_API_KEY`.
-2. Start a tunnel to port 8083 and put its https address in `PUBLIC_URL`:
-   `cloudflared tunnel --url http://localhost:8083` (a quick tunnel's address changes on every restart;
-   a named tunnel or company domain is needed before campaigns).
+2. Set `PUBLIC_URL=https://ai.bullmachine.in/aicall` (it must end with `BASE_PATH`; the app checks this).
+   FreJun reaches the app through the shared nginx, as it does for `/voicecall/`.
 3. Set `TELEPHONY_MODE=live` and restart: `docker compose -f deploy/docker-compose.yml --env-file .env up -d`.
    The app refuses to start if anything required for live calls is missing.
 4. In the app: approve the SCM script, add an internal test contact, then Calls > New call.

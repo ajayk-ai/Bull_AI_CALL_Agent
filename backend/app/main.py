@@ -1,7 +1,8 @@
-"""The web process, served on port 8083: REST API under /api/v1.
+"""The web process, served on port 8083: REST API under /api/v1, FreJun webhooks and media under /telephony,
+and the built React frontend for every other path.
 
-The built React frontend is served at / and the voice-gateway routers (Phase 3) will be mounted here while
-the platform runs without Nginx. See docs/IMPLEMENTATION_PLAN.md, Section 3.
+Behind the shared nginx on ai.bullmachine.in the whole app lives under BASE_PATH (e.g. /aicall), the same way
+the costing and voicecall apps do; nginx passes the full path through.
 """
 
 import logging
@@ -12,13 +13,14 @@ from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import auth, calls, campaigns, contacts, health, imports, org, scripts
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
+from app.core.paths import route_path
 from app.core.redis import get_redis
 from app.db.session import get_engine
 from app.voice import routes as voice_routes
@@ -41,16 +43,33 @@ async def lifespan(_: FastAPI):
 
 
 def create_app() -> FastAPI:
+    """The app, mounted under BASE_PATH when one is set."""
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_json)
+    app = _create_inner(mounted=bool(settings.base_path))
+    if not settings.base_path:
+        return app
+    base = settings.base_path
+    # Sub-applications do not run their own lifespan, so the outer app runs it.
+    outer = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
+    @outer.get(base, include_in_schema=False)
+    async def to_base_path() -> RedirectResponse:
+        return RedirectResponse(f"{base}/")
+
+    outer.mount(base, app)
+    return outer
+
+
+def _create_inner(mounted: bool) -> FastAPI:
+    settings = get_settings()
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
         docs_url="/api/v1/docs",
         redoc_url="/api/v1/redoc",
         openapi_url="/api/v1/openapi.json",
-        lifespan=lifespan,
+        lifespan=None if mounted else lifespan,
     )
     register_error_handlers(app)
     if settings.cors_origins:
@@ -74,7 +93,7 @@ def create_app() -> FastAPI:
         elapsed_ms = round((time.perf_counter() - start) * 1000, 1)
         response.headers["x-request-id"] = request_id[:64]
         response.headers.update(_SECURITY_HEADERS)
-        if not request.url.path.startswith("/api/v1/health"):
+        if not route_path(request.scope).startswith("/api/v1/health"):
             log.info(
                 "%s %s %s",
                 request.method,

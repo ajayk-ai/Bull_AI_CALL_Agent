@@ -345,3 +345,25 @@ def test_calling_mode_rules():
         gemini_api_key="g",
     )
     assert live.telephony_mode == "live"
+
+
+def test_base_path_and_public_url():
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    base = {
+        "database_url": "postgresql+psycopg://x/y",
+        "jwt_secret": "j" * 40,
+        "data_encryption_key": "k",
+        "phone_hash_key": "p" * 40,
+    }
+    assert Settings(**base, base_path="aicall/").base_path == "/aicall"
+    assert Settings(**base, base_path="/").base_path == ""
+    with pytest.raises(ValidationError, match="BASE_PATH may contain only"):
+        Settings(**base, base_path="/ai call")
+    # FreJun's webhook addresses are built from PUBLIC_URL, so it must include the prefix.
+    with pytest.raises(ValidationError, match="must end with BASE_PATH"):
+        Settings(**base, base_path="/aicall", public_url="https://ai.bullmachine.in")
+    ok = Settings(**base, base_path="/aicall", public_url="https://ai.bullmachine.in/aicall/")
+    assert ok.public_url.endswith("/aicall/")

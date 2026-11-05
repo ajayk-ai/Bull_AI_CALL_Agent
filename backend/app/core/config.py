@@ -31,8 +31,19 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = []
 
-    # Built React app (npm run build). Served at / when present.
+    # Built React app (npm run build). Served at BASE_PATH when present.
     frontend_dist: str = "../frontend/dist"
+    # URL prefix the whole app is served under behind the shared nginx (e.g. /aicall); empty = site root.
+    # The frontend must be built with the same value (Docker build arg BASE_PATH).
+    base_path: str = ""
+
+    @field_validator("base_path")
+    @classmethod
+    def _normalise_base_path(cls, value: str) -> str:
+        value = value.strip().strip("/")
+        if value and not all(c.isalnum() or c in "-_" for c in value):
+            raise ValueError("BASE_PATH may contain only letters, digits, dash and underscore, e.g. /aicall")
+        return f"/{value}" if value else ""
 
     # File storage (uploaded imports now, call recordings from Phase 3). "local" = a directory / Docker volume.
     storage_backend: Literal["local"] = "local"
@@ -106,6 +117,8 @@ class Settings(BaseSettings):
                 raise ValueError(f"TELEPHONY_MODE=live needs {', '.join(missing)}")
             if not self.public_url.startswith("https://"):
                 raise ValueError("PUBLIC_URL must start with https:// (FreJun only calls https addresses)")
+        if self.public_url and self.base_path and not self.public_url.rstrip("/").endswith(self.base_path):
+            raise ValueError(f"PUBLIC_URL must end with BASE_PATH, e.g. https://ai.bullmachine.in{self.base_path}")
         return self
 
     @property

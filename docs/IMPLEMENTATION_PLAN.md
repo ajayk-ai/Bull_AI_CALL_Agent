@@ -80,7 +80,7 @@ These points drive Decisions D1 to D3 below.
 | D2 | FreJun Teler is the first and only telephony provider for now. Exotel is not planned; the `TelephonyProvider` interface is kept. |
 | D3 | The platform is independent of PO Agent and has its own separate database. No data is shared between them. |
 | D4 | PostgreSQL in this platform's own container (`bullcall-postgres-1`), separate from the host PostgreSQL and from PO Agent. |
-| D5 | Cloudflare tunnel to port 8083, as PO Agent does. No Nginx for now. |
+| D5 | Cloudflare tunnel to port 8083, as PO Agent does. No Nginx for now. **Superseded 5 November 2026:** served at https://ai.bullmachine.in/aicall/ through the server's shared host nginx, alongside `/costing/` and `/voicecall/` (see Section 8). |
 
 Consequence of D3: neither system knows what the other has called. While both are active, the same supplier can
 receive a call from each. This is managed operationally (for example, SCM does not load the same suppliers into
@@ -237,7 +237,8 @@ Phase 3a starts as soon as the Phase 1 data model and auth exist; the full Phase
 ## 8. Deployment on the shared server
 
 - The stack runs as a separate Compose project (`bullcall`) on its own Docker network. PostgreSQL, Redis, MinIO and internal ports are **not** published to the host.
-- **No Nginx for now.** Only the `app` container is published, on **port 8083**. The bind address is set by `APP_BIND_ADDRESS` in `.env`. The default is `127.0.0.1`, so the only way in is through the Cloudflare tunnel, which provides HTTPS/WSS to users and the telephony provider. `0.0.0.0` would serve plain HTTP on 8083 to the network, and should only be used if the cloud firewall limits 8083 to the office network.
+- **Update, 5 November 2026: shared host nginx.** The server's host nginx (systemd, port 80, site file `ai.bullmachine.in`) serves every AI app under its own prefix: `/costing/` → 8000, `/voicecall/` → 8001, and now **`/aicall/` → 8083**. The app runs with `BASE_PATH=/aicall`; nginx passes the full path through, with WebSocket upgrade for FreJun media. `PUBLIC_URL=https://ai.bullmachine.in/aicall`. The notes below on the tunnel are kept for history.
+- **No Nginx for now** (original note). Only the `app` container is published, on **port 8083**. The bind address is set by `APP_BIND_ADDRESS` in `.env`. The default is `127.0.0.1`, so the only way in is through the Cloudflare tunnel, which provides HTTPS/WSS to users and the telephony provider. `0.0.0.0` would serve plain HTTP on 8083 to the network, and should only be used if the cloud firewall limits 8083 to the office network.
 - A quick Cloudflare tunnel's address changes on every restart, so the provider webhook URL must be updated each time. A named tunnel or an IT-issued domain removes this; needed before Phase 4.
 - When Nginx is introduced later, it takes the public port and `app` moves behind it unchanged.
 - Resource budget at the initial load (5 concurrent calls, 100 attempts/day) is small; the server has ample headroom. Container memory limits will be set so this stack cannot starve the other applications.

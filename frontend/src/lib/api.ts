@@ -1,6 +1,7 @@
 // HTTP client for /api/v1. Tokens live in sessionStorage, so closing the tab signs the user out.
 
-const BASE = "/api/v1";
+// import.meta.env.BASE_URL is the build's base path, e.g. "/aicall/" (or "/").
+const BASE = `${import.meta.env.BASE_URL}api/v1`;
 const ACCESS = "bullcall.access";
 const REFRESH = "bullcall.refresh";
 

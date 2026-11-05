@@ -5,7 +5,9 @@ WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
-RUN npm run build
+# URL prefix behind the shared nginx (e.g. /aicall); must match the app's BASE_PATH setting.
+ARG BASE_PATH=""
+RUN BASE_PATH="$BASE_PATH" npm run build
 
 FROM python:3.14-slim
 

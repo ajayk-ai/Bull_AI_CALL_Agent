@@ -29,6 +29,8 @@ os.environ["STORAGE_ROOT"] = tempfile.mkdtemp(prefix="bullcall-test-storage-")
 # No connection pool: the WebSocket tests run the app on another event loop.
 os.environ["DATABASE_POOL"] = "false"
 os.environ["TELEPHONY_MODE"] = "mock"
+os.environ["BASE_PATH"] = ""  # tests call the app at the site root; one test mounts it under a prefix
+os.environ["PUBLIC_URL"] = ""
 _redis = urlsplit(_env["REDIS_URL"])
 os.environ["REDIS_URL"] = urlunsplit(_redis._replace(path="/15"))
 
