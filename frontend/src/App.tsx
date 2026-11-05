@@ -4,6 +4,8 @@ import { Layout } from "./components/Layout";
 import { Loading } from "./components/ui";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { AuditPage } from "./pages/Audit";
+import { CallDetailPage } from "./pages/CallDetail";
+import { CallsPage } from "./pages/Calls";
 import { CampaignDetailPage } from "./pages/CampaignDetail";
 import { CampaignsPage } from "./pages/Campaigns";
 import { ContactsPage } from "./pages/Contacts";
@@ -26,6 +28,8 @@ function Routed() {
         <Route index element={<Navigate to="/campaigns" replace />} />
         <Route path="campaigns" element={<CampaignsPage />} />
         <Route path="campaigns/:id" element={<CampaignDetailPage />} />
+        <Route path="calls" element={<CallsPage />} />
+        <Route path="calls/:id" element={<CallDetailPage />} />
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="imports" element={<ImportsPage />} />
         <Route path="imports/new" element={<ImportWizardPage />} />

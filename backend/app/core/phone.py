@@ -6,6 +6,7 @@ database never needs the plain number to find a match.
 
 import hashlib
 import hmac
+import re
 from dataclasses import dataclass
 
 import phonenumbers
@@ -53,3 +54,19 @@ def mask(e164: str) -> str:
 def normalise(raw: str, region: str | None = None) -> NormalisedPhone:
     e164 = to_e164(raw, region)
     return NormalisedPhone(e164=e164, hash=phone_hash(e164), masked=mask(e164), encrypted=encrypt(e164))
+
+
+_NUMBER_IN_TEXT = re.compile(r"\+?\d[\d \-]{7,}\d")
+
+
+def mask_numbers_in_text(text: str) -> str:
+    """Masks anything that looks like a phone number (9+ digits), keeping the last four: for provider payloads
+    and logs, which may carry the dialled number."""
+
+    def _mask(match: re.Match) -> str:
+        digits = re.sub(r"\D", "", match.group())
+        if len(digits) < 9:
+            return match.group()
+        return "*" * (len(digits) - 4) + digits[-4:]
+
+    return _NUMBER_IN_TEXT.sub(_mask, text)

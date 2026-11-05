@@ -26,6 +26,9 @@ os.environ["APP_ENV"] = "test"
 os.environ["LOG_JSON"] = "false"
 os.environ["LOG_LEVEL"] = "WARNING"
 os.environ["STORAGE_ROOT"] = tempfile.mkdtemp(prefix="bullcall-test-storage-")
+# No connection pool: the WebSocket tests run the app on another event loop.
+os.environ["DATABASE_POOL"] = "false"
+os.environ["TELEPHONY_MODE"] = "mock"
 _redis = urlsplit(_env["REDIS_URL"])
 os.environ["REDIS_URL"] = urlunsplit(_redis._replace(path="/15"))
 

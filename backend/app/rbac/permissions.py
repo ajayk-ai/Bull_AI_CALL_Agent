@@ -33,6 +33,8 @@ class Permission(StrEnum):
     CAMPAIGNS_READ = "campaigns:read"
     CAMPAIGNS_WRITE = "campaigns:write"
     CAMPAIGNS_APPROVE = "campaigns:approve"
+    CALLS_READ = "calls:read"
+    CALLS_PLACE = "calls:place"
 
 
 _OPERATOR = {
@@ -43,6 +45,8 @@ _OPERATOR = {
     Permission.DNC_WRITE,
     Permission.SCRIPTS_READ,
     Permission.CAMPAIGNS_READ,
+    Permission.CALLS_READ,
+    Permission.CALLS_PLACE,
 }
 _CAMPAIGN_MANAGER = _OPERATOR | {
     Permission.CONTACTS_WRITE,

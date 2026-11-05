@@ -55,6 +55,13 @@ class Call(UUIDPk, Timestamps, Base):
         str_enum(CallStatus, "call_status"), default=CallStatus.QUEUED, index=True
     )
     outcome: Mapped[str | None] = mapped_column(String(64))
+    outcome_note: Mapped[str | None] = mapped_column(Text)
+    # How the call ended: agent_end_call, caller_hangup, silence, time_limit, no_answer, ...
+    end_reason: Mapped[str | None] = mapped_column(String(32))
+    # Data the script uses for this call, e.g. {"items": [{"po_number": ...}]}.
+    context: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
+    # Latency, interruptions, audio seconds, turns.
+    metrics: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
     language_detected: Mapped[str | None] = mapped_column(String(16))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

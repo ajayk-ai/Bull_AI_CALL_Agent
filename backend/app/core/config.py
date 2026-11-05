@@ -1,9 +1,9 @@
 """Application settings, read from environment variables (and `.env` in development)."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,12 +58,55 @@ class Settings(BaseSettings):
         "bengali": "bn-IN",
     }
 
+    # ---- Calling ----
+    # disabled: no calls can be placed. mock: simulated telephony, for development and tests only; every call is
+    # stored as simulated. live: real calls through FreJun (Teler).
+    telephony_mode: Literal["disabled", "mock", "live"] = "disabled"
+    # The https address FreJun uses to reach this server (the Cloudflare tunnel), e.g. https://xyz.example.com
+    public_url: str | None = None
+    teler_api_key: SecretStr | None = None
+    frejun_phone_number: str | None = None
+    teler_timeout_seconds: int = 20
+
+    gemini_api_key: SecretStr | None = None
+    gemini_live_model: str = "gemini-3.8-live"
+    # How long the caller must be silent before the agent answers (Gemini voice activity detection).
+    gemini_silence_ms: int = 300
+    # Hard stop for any call, whatever the script says, so a stuck call cannot run up charges.
+    max_call_seconds_hard: int = 15 * 60
+    # Individual calls placed from the app must fall inside these hours (campaigns have their own window).
+    individual_call_window_enforced: bool = True
+
+    # Database connection pooling; tests turn it off so connections are never shared across event loops.
+    database_pool: bool = True
+
     @field_validator("jwt_secret", "phone_hash_key")
     @classmethod
     def _long_enough(cls, value: SecretStr) -> SecretStr:
         if len(value.get_secret_value()) < 32:
             raise ValueError("must be at least 32 characters")
         return value
+
+    @model_validator(mode="after")
+    def _calling_mode(self) -> Self:
+        if self.telephony_mode == "mock" and self.is_production:
+            raise ValueError("TELEPHONY_MODE=mock is not allowed when APP_ENV=production")
+        if self.telephony_mode == "live":
+            missing = [
+                name
+                for name, value in (
+                    ("PUBLIC_URL", self.public_url),
+                    ("TELER_API_KEY", self.teler_api_key),
+                    ("FREJUN_PHONE_NUMBER", self.frejun_phone_number),
+                    ("GEMINI_API_KEY", self.gemini_api_key),
+                )
+                if not (value.get_secret_value() if isinstance(value, SecretStr) else value)
+            ]
+            if missing:
+                raise ValueError(f"TELEPHONY_MODE=live needs {', '.join(missing)}")
+            if not self.public_url.startswith("https://"):
+                raise ValueError("PUBLIC_URL must start with https:// (FreJun only calls https addresses)")
+        return self
 
     @property
     def is_production(self) -> bool:

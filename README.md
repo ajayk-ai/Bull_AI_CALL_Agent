@@ -11,11 +11,12 @@ The design, decisions and roadmap are in [docs/IMPLEMENTATION_PLAN.md](docs/IMPL
 | Phase | Scope | State |
 |---|---|---|
 | 1. Foundation | Database (all 22 tables, Alembic), JWT auth, users, departments, RBAC with department isolation, contacts, consent, do-not-call, audit log, health checks, Docker | Done |
-| 2. Campaigns and scripts | Excel/CSV upload with column mapping, script builder with versions and approval, campaigns with approval, SCM script, encrypted file storage, React UI | Done: 93 backend + 10 frontend tests, browser walkthrough |
-| 3. Real-time voice POC | FreJun Teler + Gemini Live, single real call | Next |
+| 2. Campaigns and scripts | Excel/CSV upload with column mapping, script builder with versions and approval, campaigns with approval, SCM script, encrypted file storage, React UI | Done |
+| 3. Real-time voice POC | FreJun (Teler) + Gemini Live call pipeline, call state machine and guards, signed webhooks, individual calls (API + UI), mock mode | Built and tested in simulation (122 backend + 10 frontend tests, browser walkthrough). **No real call made yet**: waiting for credentials |
 | 3. Real-time voice POC | Telephony adapter, voice gateway, single real call | Not started |
 
-No calling features exist yet. Nothing in this repository places phone calls.
+Calling is **off** by default (`TELEPHONY_MODE=disabled`). No real call has been placed yet; see
+"Making the first real call" below.
 
 ## Layout
 
@@ -28,6 +29,8 @@ backend/
     schemas/     Pydantic request/response models
     services/    business logic (no HTTP), including the audit trail
     rbac/        role permissions and department scoping
+    providers/   telephony adapters (FreJun, mock) behind one interface
+    voice/       call session, Gemini Live engine, prompt builder, state machine, signed URLs, webhooks
     api/v1/      REST routers
     main.py      FastAPI app served on port 8083
     seeds/       ready-made scripts (SCM supplier delivery confirmation)
@@ -118,6 +121,33 @@ There is no Nginx for now; HTTPS is provided by a Cloudflare tunnel to port 8083
 File storage is a local directory (Docker volume `storage`). Uploaded files are encrypted with
 `DATA_ENCRYPTION_KEY`. MinIO was planned but its Docker images are no longer published; storage sits behind an
 interface so an S3-compatible service can be added later.
+
+## Calling (Phase 3)
+
+```
+FreJun  --POST /telephony/frejun/flow-->   app: "stream to wss://.../media"
+FreJun  <==WS /telephony/frejun/media==>  app <==> Gemini Live (speech to speech)
+FreJun  --POST /telephony/frejun/status--> app: ringing / no-answer / completed / recording
+```
+
+- Every URL given to FreJun carries a signed token for that call and purpose; the media stream is single-use.
+- The call controller (not the AI) checks do-not-call, calling hours, the 5-call limit and that the number is
+  not already being called; it hangs up on silence, turn and time limits. The AI can only end the call
+  (`end_call` with an outcome). If the outcome is `opted_out`, the number goes on the do-not-call list by rule.
+- Each call stores the exact script version, prompt, model, voice and settings used (`ai_config`), the
+  transcript, provider events (phone numbers masked), metrics (reply time, interruptions) and the end reason.
+- `TELEPHONY_MODE=mock` simulates the phone network for development; such calls are stored and shown as
+  **simulated** and are refused when `APP_ENV=production`.
+
+### Making the first real call
+
+1. Put the FreJun and Gemini values in `.env`: `TELER_API_KEY`, `FREJUN_PHONE_NUMBER`, `GEMINI_API_KEY`.
+2. Start a tunnel to port 8083 and put its https address in `PUBLIC_URL`:
+   `cloudflared tunnel --url http://localhost:8083` (a quick tunnel's address changes on every restart;
+   a named tunnel or company domain is needed before campaigns).
+3. Set `TELEPHONY_MODE=live` and restart: `docker compose -f deploy/docker-compose.yml --env-file .env up -d`.
+   The app refuses to start if anything required for live calls is missing.
+4. In the app: approve the SCM script, add an internal test contact, then Calls > New call.
 
 ## Security notes
 

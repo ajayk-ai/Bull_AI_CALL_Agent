@@ -96,6 +96,12 @@ const statusTones: Record<string, keyof typeof tones> = {
   failed: "red",
   rejected: "red",
   uploaded: "slate",
+  queued: "slate",
+  dialing: "blue",
+  ringing: "blue",
+  in_progress: "blue",
+  no_answer: "amber",
+  busy: "amber",
 };
 
 export function StatusBadge({ status }: { status: string }) {

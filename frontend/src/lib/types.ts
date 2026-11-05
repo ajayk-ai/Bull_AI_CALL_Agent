@@ -235,3 +235,51 @@ export interface ImportRecord {
   campaign_contacts: number;
   created_at: string;
 }
+
+export type CallStatus = "queued" | "dialing" | "ringing" | "in_progress" | "completed" | "no_answer" | "busy" | "failed" | "cancelled";
+
+export interface Call {
+  id: string;
+  department_id: string;
+  campaign_id: string | null;
+  contact_id: string | null;
+  contact_name: string | null;
+  phone_masked: string;
+  script_version_id: string;
+  provider: string;
+  is_simulated: boolean;
+  status: CallStatus;
+  outcome: string | null;
+  outcome_note: string | null;
+  end_reason: string | null;
+  started_at: string | null;
+  answered_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  error: string | null;
+  created_at: string;
+}
+
+export interface TranscriptTurn {
+  turn_id: number;
+  speaker: "agent" | "caller";
+  text: string;
+  at_ms: number;
+  interrupted?: boolean;
+}
+
+export interface CallDetail extends Call {
+  ai_config: Record<string, unknown> & { language?: string; model?: string; voice?: string; telephony?: string };
+  context: { items?: Record<string, string>[] };
+  metrics: {
+    duration_seconds?: number;
+    turns?: number;
+    interruptions?: number;
+    first_audio_ms?: number | null;
+    reply_ms?: number[];
+    silence_prompts?: number;
+  };
+  transcript: TranscriptTurn[];
+  events: { event_type: string; payload: Record<string, unknown>; received_at: string }[];
+  recordings: { id: string; bucket: string; created_at: string }[];
+}

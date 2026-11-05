@@ -5,6 +5,7 @@ import { ROLE_NAMES } from "./ui";
 
 const NAV: { to: string; label: string; permission?: string }[] = [
   { to: "/campaigns", label: "Campaigns", permission: "campaigns:read" },
+  { to: "/calls", label: "Calls", permission: "calls:read" },
   { to: "/contacts", label: "Contacts", permission: "contacts:read" },
   { to: "/imports", label: "Uploads", permission: "contacts:read" },
   { to: "/scripts", label: "Scripts", permission: "scripts:read" },

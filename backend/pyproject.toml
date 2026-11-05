@@ -9,8 +9,10 @@ dependencies = [
     "cryptography>=50.0.2",
     "email-validator>=2.3.0",
     "fastapi>=0.162.0",
+    "google-genai==2.28.0",
     "httpx>=0.28.1",
     "jsonschema>=4.26.0",
+    "numpy==2.5.3",
     "openpyxl>=3.1.5",
     "phonenumbers>=9.0.42",
     "psycopg[binary]>=3.3.7",
@@ -19,6 +21,7 @@ dependencies = [
     "python-multipart>=0.0.33",
     "redis>=8.1.0",
     "sqlalchemy[asyncio]>=2.1.6",
+    "teler==1.0.0",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -42,7 +45,7 @@ select = ["E", "F", "I", "B", "UP", "ASYNC", "S"]
 ignore = ["B008", "S101", "B904"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S105", "S106"]
+"tests/**" = ["S105", "S106", "S110"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
