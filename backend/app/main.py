@@ -114,16 +114,24 @@ def _create_inner(mounted: bool) -> FastAPI:
         api.include_router(module.router)
     app.include_router(api)
     app.include_router(voice_routes.router)
-    _mount_frontend(app, Path(settings.frontend_dist))
+    _mount_frontend(app, Path(settings.frontend_dist), settings.base_path)
     return app
 
 
-def _mount_frontend(app: FastAPI, dist: Path) -> None:
+def _mount_frontend(app: FastAPI, dist: Path, base_path: str) -> None:
     """Serves the built React app. Unknown non-API paths return index.html so client-side routes work."""
     index = dist / "index.html"
     if not index.is_file():
         log.warning("Frontend build not found at %s; serving the API only", dist)
         return
+    # The frontend is built for one prefix; served under another, its pages stay blank.
+    if f'"{base_path}/assets/' not in index.read_text():
+        log.error(
+            "The frontend at %s was not built for BASE_PATH=%r, so its pages will not load. "
+            "Rebuild it with the same BASE_PATH (Docker: up -d --build with --env-file .env).",
+            dist,
+            base_path,
+        )
     root = dist.resolve()
     app.mount("/assets", StaticFiles(directory=root / "assets"), name="assets")
 
