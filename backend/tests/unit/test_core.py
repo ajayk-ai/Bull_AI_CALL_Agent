@@ -91,24 +91,25 @@ def test_encryption_round_trip():
 # ---- RBAC ----
 
 
-def test_roles_are_strictly_nested():
-    operator, manager, hod, admin = (
-        ROLE_PERMISSIONS[r] for r in (Role.OPERATOR, Role.CAMPAIGN_MANAGER, Role.HOD, Role.ADMIN)
-    )
-    assert operator < manager < hod < admin
-    assert admin == frozenset(Permission)
-
-
-def test_sensitive_permissions():
-    assert Permission.CONTACTS_VIEW_FULL_NUMBER not in ROLE_PERMISSIONS[Role.CAMPAIGN_MANAGER]
-    assert Permission.DNC_DELETE not in ROLE_PERMISSIONS[Role.OPERATOR]
-    assert Permission.DNC_GLOBAL not in ROLE_PERMISSIONS[Role.HOD]
-    assert Permission.DEPARTMENTS_MANAGE not in ROLE_PERMISSIONS[Role.HOD]
+def test_two_roles():
+    user, admin = ROLE_PERMISSIONS[Role.USER], ROLE_PERMISSIONS[Role.ADMIN]
+    assert set(Role) == {Role.ADMIN, Role.USER}
+    assert user < admin and admin == frozenset(Permission)
+    # Only the admin manages accounts, departments, the global DNC list and the audit log.
+    for admin_only in (
+        Permission.USERS_READ,
+        Permission.USERS_MANAGE,
+        Permission.DEPARTMENTS_MANAGE,
+        Permission.DNC_GLOBAL,
+        Permission.AUDIT_READ,
+    ):
+        assert admin_only not in user
+    assert Permission.CALLS_PLACE in user and Permission.CAMPAIGNS_APPROVE in user
 
 
 def test_resolve_department():
     own, other = uuid.uuid4(), uuid.uuid4()
-    operator = User(role=Role.OPERATOR, department_id=own)
+    operator = User(role=Role.USER, department_id=own)
     admin = User(role=Role.ADMIN, department_id=None)
     assert resolve_department(operator, None) == own
     assert resolve_department(operator, own) == own

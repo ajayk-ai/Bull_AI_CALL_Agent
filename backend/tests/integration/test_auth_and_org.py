@@ -29,7 +29,7 @@ async def test_openapi_published(client):
 
 
 async def test_login_me_and_refresh(client, make_user, scm):
-    hod = await make_user(Role.HOD, scm, email="Hod.Scm@Example.com")
+    hod = await make_user(Role.USER, scm, email="Hod.Scm@Example.com")
     # E-mail matching is case-insensitive.
     login = await client.post(f"{API}/auth/login", json={"email": "hod.scm@example.com", "password": PASSWORD})
     assert login.status_code == 200
@@ -38,7 +38,7 @@ async def test_login_me_and_refresh(client, make_user, scm):
     me = await client.get(f"{API}/auth/me", headers=hod.headers)
     assert me.status_code == 200
     body = me.json()
-    assert body["role"] == "hod" and body["department_id"] == str(scm.id)
+    assert body["role"] == "user" and body["department_id"] == str(scm.id)
     assert "contacts:view_full_number" in body["permissions"] and "departments:manage" not in body["permissions"]
     assert "password_hash" not in body
 
@@ -55,7 +55,7 @@ async def test_unauthenticated_requests_rejected(client):
 
 
 async def test_failed_logins_are_generic_audited_and_locked_out(client, admin, scm, make_user):
-    operator = await make_user(Role.OPERATOR, scm)
+    operator = await make_user(Role.USER, scm)
     # Mixing user ID and e-mail does not give extra attempts: the count is per account.
     for login in [operator.user.username, operator.user.email] * 2 + [operator.user.username.upper()]:
         bad = await client.post(f"{API}/auth/login", json={"login": login, "password": "wrong-password"})
@@ -81,7 +81,7 @@ async def test_failed_logins_are_generic_audited_and_locked_out(client, admin, s
 
 
 async def test_password_change_signs_out_old_tokens(client, make_user, scm):
-    operator = await make_user(Role.OPERATOR, scm)
+    operator = await make_user(Role.USER, scm)
     changed = await client.post(
         f"{API}/auth/change-password",
         headers=operator.headers,
@@ -94,7 +94,7 @@ async def test_password_change_signs_out_old_tokens(client, make_user, scm):
 
 
 async def test_deactivated_user_is_signed_out(client, admin, make_user, scm):
-    operator = await make_user(Role.OPERATOR, scm)
+    operator = await make_user(Role.USER, scm)
     response = await client.patch(f"{API}/users/{operator.id}", headers=admin.headers, json={"is_active": False})
     assert response.status_code == 200
     assert (await client.get(f"{API}/auth/me", headers=operator.headers)).status_code == 401
@@ -111,7 +111,7 @@ async def test_admin_manages_departments(client, admin, make_user, scm):
     dup = await client.post(f"{API}/departments", headers=admin.headers, json={"code": "RND", "name": "Again"})
     assert dup.status_code == 409
 
-    hod = await make_user(Role.HOD, scm)
+    hod = await make_user(Role.USER, scm)
     forbidden = await client.post(f"{API}/departments", headers=hod.headers, json={"code": "X1", "name": "X"})
     assert forbidden.status_code == 403
     # Non-admins see only their own department.
@@ -120,11 +120,11 @@ async def test_admin_manages_departments(client, admin, make_user, scm):
 
 
 async def test_only_admin_manages_accounts(client, admin, make_user, scm, quality):
-    hod = await make_user(Role.HOD, scm)
-    qa_hod = await make_user(Role.HOD, quality)
-    body = {"username": "op1", "full_name": "Operator One", "role": "operator", "department_id": str(scm.id)}
+    hod = await make_user(Role.USER, scm)
+    qa_hod = await make_user(Role.USER, quality)
+    body = {"username": "op1", "full_name": "Operator One", "role": "user", "department_id": str(scm.id)}
 
-    # HODs can see their own department's users, but cannot create or change accounts.
+    # Users cannot see, create or change accounts; that is the admin's job.
     assert (await client.post(f"{API}/users", headers=hod.headers, json=body)).status_code == 403
     assert (
         await client.patch(f"{API}/users/{qa_hod.id}", headers=hod.headers, json={"full_name": "x"})
@@ -132,9 +132,8 @@ async def test_only_admin_manages_accounts(client, admin, make_user, scm, qualit
     assert (
         await client.post(f"{API}/users/{qa_hod.id}/reset-password", headers=hod.headers, json={})
     ).status_code == 403
-    listed = (await client.get(f"{API}/users", headers=hod.headers)).json()
-    assert qa_hod.user.username not in {u["username"] for u in listed["items"]}
-    assert (await client.get(f"{API}/users/{qa_hod.id}", headers=hod.headers)).status_code == 404
+    assert (await client.get(f"{API}/users", headers=hod.headers)).status_code == 403
+    assert (await client.get(f"{API}/users/{qa_hod.id}", headers=hod.headers)).status_code == 403
 
     created = await client.post(f"{API}/users", headers=admin.headers, json=body)
     assert created.status_code == 201
@@ -142,7 +141,7 @@ async def test_only_admin_manages_accounts(client, admin, make_user, scm, qualit
 
 
 async def test_admin_creates_account_with_user_id_and_temporary_password(client, admin, scm):
-    body = {"username": "Ravi.K", "full_name": "Ravi Kumar", "role": "campaign_manager", "department_id": str(scm.id)}
+    body = {"username": "Ravi.K", "full_name": "Ravi Kumar", "role": "user", "department_id": str(scm.id)}
     created = (await client.post(f"{API}/users", headers=admin.headers, json=body)).json()
     user, temp = created["user"], created["temporary_password"]
     assert user["username"] == "ravi.k" and user["email"] is None and user["must_change_password"] is True
@@ -180,7 +179,7 @@ async def test_admin_creates_account_with_user_id_and_temporary_password(client,
 
 
 async def test_admin_resets_password(client, admin, make_user, scm):
-    operator = await make_user(Role.OPERATOR, scm)
+    operator = await make_user(Role.USER, scm)
     reset = (await client.post(f"{API}/users/{operator.id}/reset-password", headers=admin.headers, json={})).json()
     assert reset["user"]["must_change_password"] is True
     # Old sessions are signed out; the old password no longer works; the temporary one does.
@@ -195,18 +194,18 @@ async def test_admin_resets_password(client, admin, make_user, scm):
 
 async def test_admin_safety_rules(client, admin, make_user, scm):
     assert (
-        await client.patch(f"{API}/users/{admin.id}", headers=admin.headers, json={"role": "hod"})
+        await client.patch(f"{API}/users/{admin.id}", headers=admin.headers, json={"role": "user"})
     ).status_code == 403
     second = await make_user(Role.ADMIN)
     # Demoting the other admin is fine while one active admin remains.
     demoted = await client.patch(
-        f"{API}/users/{second.id}", headers=admin.headers, json={"role": "operator", "department_id": str(scm.id)}
+        f"{API}/users/{second.id}", headers=admin.headers, json={"role": "user", "department_id": str(scm.id)}
     )
-    assert demoted.status_code == 200 and demoted.json()["role"] == "operator"
+    assert demoted.status_code == 200 and demoted.json()["role"] == "user"
     # Moving a user to a role that needs a department, without one, is refused.
     third = await make_user(Role.ADMIN)
     assert (
-        await client.patch(f"{API}/users/{third.id}", headers=admin.headers, json={"role": "hod"})
+        await client.patch(f"{API}/users/{third.id}", headers=admin.headers, json={"role": "user"})
     ).status_code == 422
 
 
@@ -226,18 +225,18 @@ async def test_last_admin_cannot_be_removed(make_user):
     someone = User(id=uuid.uuid4(), username="x", role=Role.ADMIN)
     ctx = RequestContext(None, None, None)
     async with get_sessionmaker()() as session:
-        for change in ({"is_active": False}, {"role": "operator"}):
+        for change in ({"is_active": False}, {"role": "user"}):
             with pytest.raises(Conflict, match="last active admin"):
                 await org_service.update_user(session, someone, only.id, UserUpdate(**change), ctx)
 
 
 async def test_non_admin_role_requires_department(client, admin):
-    body = {"username": "nodept", "full_name": "A", "role": "operator"}
+    body = {"username": "nodept", "full_name": "A", "role": "user"}
     assert (await client.post(f"{API}/users", headers=admin.headers, json=body)).status_code == 422
 
 
 async def test_operator_cannot_read_users_or_audit(client, make_user, scm):
-    operator = await make_user(Role.OPERATOR, scm)
+    operator = await make_user(Role.USER, scm)
     assert (await client.get(f"{API}/users", headers=operator.headers)).status_code == 403
     assert (await client.get(f"{API}/audit-logs", headers=operator.headers)).status_code == 403
 
@@ -247,7 +246,7 @@ async def test_weak_password_rejected(client, admin, scm):
         "username": "weak",
         "full_name": "A",
         "password": "short",
-        "role": "operator",
+        "role": "user",
         "department_id": str(scm.id),
     }
     response = await client.post(f"{API}/users", headers=admin.headers, json=body)

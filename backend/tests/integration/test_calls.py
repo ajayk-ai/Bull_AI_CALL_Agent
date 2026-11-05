@@ -67,7 +67,7 @@ async def version_id(scm) -> str:
 
 @pytest.fixture
 async def operator(make_user, scm):
-    return await make_user(Role.OPERATOR, scm)
+    return await make_user(Role.USER, scm)
 
 
 async def contact(client, actor, phone="9876543210") -> str:
@@ -89,7 +89,7 @@ def token_of(url: str) -> str:
 async def test_place_individual_call_with_mock_telephony(
     client, operator, make_user, scm, version_id, telephony, engine
 ):
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
+    manager = await make_user(Role.USER, scm)
     contact_id = await contact(client, manager)
     response = await client.post(
         f"{API}/calls",
@@ -157,7 +157,7 @@ async def test_draft_script_and_other_department_refused(
         await session.commit()
     body = {"phone": "9123456780", "script_version_id": version_id, "context": ITEMS}
     assert (await client.post(f"{API}/calls", headers=operator.headers, json=body)).status_code == 422
-    qa_operator = await make_user(Role.OPERATOR, quality)
+    qa_operator = await make_user(Role.USER, quality)
     assert (await client.post(f"{API}/calls", headers=qa_operator.headers, json=body)).status_code == 422
 
 

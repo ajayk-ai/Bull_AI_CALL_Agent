@@ -1,6 +1,6 @@
 // Shapes returned by the backend (see /api/v1/docs).
 
-export type Role = "admin" | "hod" | "campaign_manager" | "operator";
+export type Role = "admin" | "user";
 
 export interface Page<T> {
   items: T[];

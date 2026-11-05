@@ -1,6 +1,6 @@
 """Role → permission map and department scoping rules.
 
-Admins work across all departments. Every other role is confined to its own department: requests for
+Admins work across all departments. Users are confined to its own department: requests for
 another department's records return 404, so the records' existence is not disclosed.
 """
 
@@ -37,37 +37,33 @@ class Permission(StrEnum):
     CALLS_PLACE = "calls:place"
 
 
-_OPERATOR = {
-    Permission.CONTACTS_READ,
-    Permission.CONSENT_WRITE,
-    Permission.DNC_READ,
-    # Operators record opt-out requests, so they can add (not remove) DNC entries.
-    Permission.DNC_WRITE,
-    Permission.SCRIPTS_READ,
-    Permission.CAMPAIGNS_READ,
-    Permission.CALLS_READ,
-    Permission.CALLS_PLACE,
-}
-_CAMPAIGN_MANAGER = _OPERATOR | {
-    Permission.CONTACTS_WRITE,
-    Permission.CONTACTS_DELETE,
-    Permission.IMPORTS_WRITE,
-    Permission.SCRIPTS_WRITE,
-    Permission.CAMPAIGNS_WRITE,
-}
-_HOD = _CAMPAIGN_MANAGER | {
-    Permission.USERS_READ,  # their department's users; creating accounts and granting access is admin-only
-    Permission.CONTACTS_VIEW_FULL_NUMBER,
-    Permission.DNC_DELETE,
-    Permission.AUDIT_READ,
-    Permission.SCRIPTS_APPROVE,
-    Permission.CAMPAIGNS_APPROVE,
-}
+# There are two roles. The admin creates every account and works across all departments. Everyone else
+# is a "user" who can do all the calling work of their own department. Approving a script or a campaign
+# still needs a second person: the author or submitter cannot approve their own (see services).
+_USER = frozenset(
+    {
+        Permission.CONTACTS_READ,
+        Permission.CONTACTS_WRITE,
+        Permission.CONTACTS_DELETE,
+        Permission.CONTACTS_VIEW_FULL_NUMBER,
+        Permission.CONSENT_WRITE,
+        Permission.DNC_READ,
+        Permission.DNC_WRITE,
+        Permission.DNC_DELETE,
+        Permission.IMPORTS_WRITE,
+        Permission.SCRIPTS_READ,
+        Permission.SCRIPTS_WRITE,
+        Permission.SCRIPTS_APPROVE,
+        Permission.CAMPAIGNS_READ,
+        Permission.CAMPAIGNS_WRITE,
+        Permission.CAMPAIGNS_APPROVE,
+        Permission.CALLS_READ,
+        Permission.CALLS_PLACE,
+    }
+)
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
-    Role.OPERATOR: frozenset(_OPERATOR),
-    Role.CAMPAIGN_MANAGER: frozenset(_CAMPAIGN_MANAGER),
-    Role.HOD: frozenset(_HOD),
+    Role.USER: _USER,
     Role.ADMIN: frozenset(Permission),
 }
 

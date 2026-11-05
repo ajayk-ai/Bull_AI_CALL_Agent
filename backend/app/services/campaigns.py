@@ -70,13 +70,8 @@ async def _out(session: AsyncSession, campaign: Campaign) -> CampaignOut:
 
 async def _check_owner(session: AsyncSession, owner_id: uuid.UUID, department_id: uuid.UUID) -> None:
     owner = await session.get(User, owner_id)
-    if (
-        owner is None
-        or not owner.is_active
-        or owner.role not in (Role.CAMPAIGN_MANAGER, Role.HOD, Role.ADMIN)
-        or (owner.role != Role.ADMIN and owner.department_id != department_id)
-    ):
-        raise ValidationFailed("Owner must be an active campaign manager, HOD or admin of the campaign's department")
+    if owner is None or not owner.is_active or (owner.role != Role.ADMIN and owner.department_id != department_id):
+        raise ValidationFailed("Owner must be an active user of the campaign's department, or an admin")
 
 
 async def _check_script_version(

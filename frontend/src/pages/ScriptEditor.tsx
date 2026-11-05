@@ -126,7 +126,7 @@ export function ScriptEditorPage() {
       {saved && <Notice tone="green">Draft saved.</Notice>}
       {status === "published" && <Notice tone="green">Published. It cannot be changed; campaigns keep this exact version. To change it, create a new version.</Notice>}
       {status === "retired" && <Notice>Retired: a newer version has been published. Campaigns already using this version keep it.</Notice>}
-      {status === "pending_approval" && <Notice tone="blue">Waiting for approval by a HOD or admin other than the author.</Notice>}
+      {status === "pending_approval" && <Notice tone="blue">Waiting for approval by someone other than the author (a colleague in the department, or an admin).</Notice>}
 
       <fieldset disabled={!editable} className="space-y-4">
         {!versionId && (

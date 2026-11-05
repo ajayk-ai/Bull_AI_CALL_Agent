@@ -24,7 +24,7 @@ def contact_body(**overrides):
 
 
 async def test_create_contact_masks_and_encrypts_number(client, make_user, scm):
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
+    manager = await make_user(Role.USER, scm)
     response = await client.post(f"{API}/contacts", headers=manager.headers, json=contact_body())
     assert response.status_code == 201, response.text
     body = response.json()
@@ -39,7 +39,7 @@ async def test_create_contact_masks_and_encrypts_number(client, make_user, scm):
 
 
 async def test_duplicate_detection_across_formats_and_departments(client, admin, make_user, scm, quality):
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
+    manager = await make_user(Role.USER, scm)
     first = await client.post(f"{API}/contacts", headers=manager.headers, json=contact_body())
     dup = await client.post(f"{API}/contacts", headers=manager.headers, json=contact_body(phone="+91 98765-43210"))
     assert dup.status_code == 409
@@ -53,7 +53,7 @@ async def test_duplicate_detection_across_formats_and_departments(client, admin,
 
 
 async def test_deleted_contact_frees_the_number(client, make_user, scm):
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
+    manager = await make_user(Role.USER, scm)
     first = (await client.post(f"{API}/contacts", headers=manager.headers, json=contact_body())).json()
     assert (await client.delete(f"{API}/contacts/{first['id']}", headers=manager.headers)).status_code == 204
     assert (await client.get(f"{API}/contacts/{first['id']}", headers=manager.headers)).status_code == 404
@@ -62,8 +62,8 @@ async def test_deleted_contact_frees_the_number(client, make_user, scm):
 
 
 async def test_department_isolation(client, make_user, scm, quality):
-    scm_manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
-    qa_hod = await make_user(Role.HOD, quality)
+    scm_manager = await make_user(Role.USER, scm)
+    qa_hod = await make_user(Role.USER, quality)
     contact = (await client.post(f"{API}/contacts", headers=scm_manager.headers, json=contact_body())).json()
 
     assert (await client.get(f"{API}/contacts/{contact['id']}", headers=qa_hod.headers)).status_code == 404
@@ -82,31 +82,34 @@ async def test_department_isolation(client, make_user, scm, quality):
     assert cross.status_code == 403
 
 
-async def test_role_permissions_on_contacts(client, make_user, scm):
-    operator = await make_user(Role.OPERATOR, scm)
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
-    contact = (await client.post(f"{API}/contacts", headers=manager.headers, json=contact_body())).json()
+async def test_users_share_their_department_contacts(client, make_user, scm, quality):
+    colleague = await make_user(Role.USER, scm)
+    author = await make_user(Role.USER, scm)
+    outsider = await make_user(Role.USER, quality)
+    contact = (await client.post(f"{API}/contacts", headers=author.headers, json=contact_body())).json()
 
-    assert (await client.get(f"{API}/contacts/{contact['id']}", headers=operator.headers)).status_code == 200
-    assert (await client.post(f"{API}/contacts", headers=operator.headers, json=contact_body())).status_code == 403
-    assert (await client.delete(f"{API}/contacts/{contact['id']}", headers=operator.headers)).status_code == 403
-    # Only HOD and admin can see the full number.
-    assert (await client.get(f"{API}/contacts/{contact['id']}/phone", headers=manager.headers)).status_code == 403
+    # Any user of the department can work with the department's contacts.
+    assert (await client.get(f"{API}/contacts/{contact['id']}", headers=colleague.headers)).status_code == 200
+    assert (await client.get(f"{API}/contacts/{contact['id']}/phone", headers=colleague.headers)).status_code == 200
+    # Another department's user cannot even see that it exists.
+    assert (await client.get(f"{API}/contacts/{contact['id']}", headers=outsider.headers)).status_code == 404
+    assert (await client.delete(f"{API}/contacts/{contact['id']}", headers=outsider.headers)).status_code == 404
+    assert (await client.delete(f"{API}/contacts/{contact['id']}", headers=colleague.headers)).status_code == 204
 
 
-async def test_reveal_phone_is_audited(client, make_user, scm):
-    hod = await make_user(Role.HOD, scm)
+async def test_reveal_phone_is_audited(client, admin, make_user, scm):
+    hod = await make_user(Role.USER, scm)
     contact = (await client.post(f"{API}/contacts", headers=hod.headers, json=contact_body())).json()
     revealed = await client.get(f"{API}/contacts/{contact['id']}/phone", headers=hod.headers)
     assert revealed.json()["phone"] == E164
 
-    logs = (await client.get(f"{API}/audit-logs?entity_id={contact['id']}", headers=hod.headers)).json()
+    logs = (await client.get(f"{API}/audit-logs?entity_id={contact['id']}", headers=admin.headers)).json()
     assert [e["action"] for e in logs["items"]] == ["contact.phone_revealed", "contact.create"]
     assert NUMBER not in json.dumps(logs)
 
 
 async def test_search_and_update(client, make_user, scm):
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
+    manager = await make_user(Role.USER, scm)
     a = (await client.post(f"{API}/contacts", headers=manager.headers, json=contact_body())).json()
     await client.post(
         f"{API}/contacts",
@@ -132,7 +135,7 @@ async def test_search_and_update(client, make_user, scm):
 
 
 async def test_contact_validation(client, make_user, scm):
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
+    manager = await make_user(Role.USER, scm)
     for bad in [
         {"phone": "12345"},
         {"language": "tamil"},
@@ -147,9 +150,9 @@ async def test_contact_validation(client, make_user, scm):
 
 
 async def test_dnc_flags_contacts_and_respects_scope(client, admin, make_user, scm, quality):
-    operator = await make_user(Role.OPERATOR, scm)
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
-    qa_manager = await make_user(Role.CAMPAIGN_MANAGER, quality)
+    operator = await make_user(Role.USER, scm)
+    manager = await make_user(Role.USER, scm)
+    qa_manager = await make_user(Role.USER, quality)
     contact = (await client.post(f"{API}/contacts", headers=manager.headers, json=contact_body())).json()
     qa_contact = (await client.post(f"{API}/contacts", headers=qa_manager.headers, json=contact_body())).json()
 
@@ -175,20 +178,19 @@ async def test_dnc_flags_contacts_and_respects_scope(client, admin, make_user, s
     assert (await client.post(f"{API}/dnc", headers=admin.headers, json=glob)).status_code == 201
     assert (await client.get(f"{API}/contacts/{qa_contact['id']}", headers=qa_manager.headers)).json()["do_not_call"]
 
-    # Operators cannot remove entries; HODs can remove their department's but not global ones.
+    # Users can remove their department's entries, but not global ones.
     entries = (await client.get(f"{API}/dnc", headers=operator.headers)).json()
     assert entries["total"] == 2
     assert NUMBER not in json.dumps(entries)
     dept_entry = next(e for e in entries["items"] if e["department_id"])
     global_entry = next(e for e in entries["items"] if not e["department_id"])
-    assert (await client.delete(f"{API}/dnc/{dept_entry['id']}", headers=operator.headers)).status_code == 403
-    hod = await make_user(Role.HOD, scm)
-    assert (await client.delete(f"{API}/dnc/{global_entry['id']}", headers=hod.headers)).status_code == 403
-    assert (await client.delete(f"{API}/dnc/{dept_entry['id']}", headers=hod.headers)).status_code == 204
+    assert (await client.delete(f"{API}/dnc/{dept_entry['id']}", headers=qa_manager.headers)).status_code == 404
+    assert (await client.delete(f"{API}/dnc/{global_entry['id']}", headers=operator.headers)).status_code == 403
+    assert (await client.delete(f"{API}/dnc/{dept_entry['id']}", headers=operator.headers)).status_code == 204
 
 
 async def test_expired_dnc_no_longer_suppresses(client, make_user, scm):
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
+    manager = await make_user(Role.USER, scm)
     contact = (await client.post(f"{API}/contacts", headers=manager.headers, json=contact_body())).json()
     expired = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     await client.post(
@@ -201,8 +203,8 @@ async def test_expired_dnc_no_longer_suppresses(client, make_user, scm):
 
 
 async def test_consent_history_is_kept(client, make_user, scm):
-    operator = await make_user(Role.OPERATOR, scm)
-    manager = await make_user(Role.CAMPAIGN_MANAGER, scm)
+    operator = await make_user(Role.USER, scm)
+    manager = await make_user(Role.USER, scm)
     contact = (await client.post(f"{API}/contacts", headers=manager.headers, json=contact_body())).json()
     url = f"{API}/contacts/{contact['id']}/consents"
     granted = {
@@ -224,19 +226,17 @@ async def test_consent_history_is_kept(client, make_user, scm):
 # ---- audit ----
 
 
-async def test_audit_scope_and_redaction(client, admin, make_user, scm, quality):
-    scm_hod = await make_user(Role.HOD, scm)
-    qa_hod = await make_user(Role.HOD, quality)
+async def test_audit_is_admin_only_and_redacted(client, admin, make_user, scm):
+    scm_hod = await make_user(Role.USER, scm)
     contact = (await client.post(f"{API}/contacts", headers=scm_hod.headers, json=contact_body())).json()
     await client.patch(f"{API}/contacts/{contact['id']}", headers=scm_hod.headers, json={"phone": "9000012345"})
 
-    scm_logs = (await client.get(f"{API}/audit-logs?entity_type=contact", headers=scm_hod.headers)).json()
+    # The audit log is the admin's.
+    assert (await client.get(f"{API}/audit-logs?entity_type=contact", headers=scm_hod.headers)).status_code == 403
+    scm_logs = (await client.get(f"{API}/audit-logs?entity_type=contact", headers=admin.headers)).json()
     assert scm_logs["total"] == 2
     update = next(e for e in scm_logs["items"] if e["action"] == "contact.update")
     assert update["changes"]["phone_masked"] == {"from": "+91******3210", "to": "+91******2345"}
     assert update["actor_email"] == scm_hod.user.email and update["request_id"]
     text = json.dumps(scm_logs)
     assert NUMBER not in text and "9000012345" not in text
-
-    assert (await client.get(f"{API}/audit-logs?entity_type=contact", headers=qa_hod.headers)).json()["total"] == 0
-    assert (await client.get(f"{API}/audit-logs?entity_type=contact", headers=admin.headers)).json()["total"] == 2

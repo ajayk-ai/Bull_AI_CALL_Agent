@@ -5,9 +5,7 @@ from enum import StrEnum
 
 class Role(StrEnum):
     ADMIN = "admin"
-    HOD = "hod"
-    CAMPAIGN_MANAGER = "campaign_manager"
-    OPERATOR = "operator"
+    USER = "user"
 
 
 class ConsentType(StrEnum):

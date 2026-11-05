@@ -38,13 +38,13 @@ async def upload(client, actor, data: bytes, name: str = "suppliers.xlsx"):
 
 @pytest.fixture
 async def manager(make_user, scm):
-    return await make_user(Role.CAMPAIGN_MANAGER, scm)
+    return await make_user(Role.USER, scm)
 
 
 @pytest.fixture
 async def campaign(client, manager, make_user, scm) -> dict:
     """A draft SCM campaign using the published SCM script."""
-    hod = await make_user(Role.HOD, scm)
+    hod = await make_user(Role.USER, scm)
     body = {
         "name": "SCM",
         "config": copy.deepcopy(scm_delivery.CONFIG),
@@ -233,7 +233,7 @@ async def test_campaign_import_checks_script_fields_and_dnc(client, manager, cam
     assert "do-not-call" in report["warnings"][0]["message"]
 
 
-async def test_import_mapping_and_permission_checks(client, manager, make_user, scm, campaign):
+async def test_import_mapping_and_permission_checks(client, manager, make_user, scm, quality, campaign):
     record = (await upload(client, manager, xlsx([HEADERS, ["A", 9876543210, 1, "Pin", "2026-11-05", ""]]))).json()
     url = f"{API}/imports/{record['id']}/process"
     unknown = await client.post(
@@ -243,9 +243,10 @@ async def test_import_mapping_and_permission_checks(client, manager, make_user, 
     no_campaign = await client.post(url, headers=manager.headers, json={"mapping": MAPPING})
     assert no_campaign.status_code == 422  # campaign fields without a campaign
 
-    operator = await make_user(Role.OPERATOR, scm)
-    assert (await upload(client, operator, xlsx([HEADERS]))).status_code == 403
-    assert (await client.get(f"{API}/imports/{record['id']}", headers=operator.headers)).status_code == 200
+    colleague = await make_user(Role.USER, scm)
+    assert (await client.get(f"{API}/imports/{record['id']}", headers=colleague.headers)).status_code == 200
+    outsider = await make_user(Role.USER, quality)
+    assert (await client.get(f"{API}/imports/{record['id']}", headers=outsider.headers)).status_code == 404
 
 
 async def test_upload_limits(client, manager, monkeypatch):

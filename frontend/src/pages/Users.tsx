@@ -7,13 +7,11 @@ import { useAction, useApi } from "../lib/hooks";
 import type { Department, Page, Role, User, UserCredentials } from "../lib/types";
 
 const PAGE_SIZE = 50;
-const ROLES: Role[] = ["operator", "campaign_manager", "hod", "admin"];
+const ROLES: Role[] = ["user", "admin"];
 
 export const ROLE_ACCESS: Record<Role, string> = {
-  operator: "Places individual calls; sees contacts, scripts and campaigns; records consent and opt-outs.",
-  campaign_manager: "Everything an operator can do, plus managing contacts, uploads, scripts and campaigns.",
-  hod: "Everything a campaign manager can do, plus approving scripts and campaigns, full phone numbers, the department's users and audit log.",
-  admin: "Everything, in every department. Creates accounts and grants access.",
+  user: "All the calling work of their own department: contacts, uploads, scripts, campaigns, calls and do-not-call. Approving a script or campaign needs a second person.",
+  admin: "Everything, in every department. Creates accounts, manages departments and sees the audit log.",
 };
 
 export function UsersPage() {
@@ -50,7 +48,7 @@ export function UsersPage() {
     <>
       <PageHeader
         title="Users and access"
-        subtitle={isAdmin ? "Accounts for every department. Only admins create accounts and grant access." : "Users in your department (read only). Ask the admin to add or change accounts."}
+        subtitle="Accounts for every department. Only the admin creates accounts and gives access."
         actions={
           isAdmin && (
             <Button
@@ -112,7 +110,7 @@ export function UsersPage() {
             <span />
           )}
           <Select value={filters.role} onChange={(e) => setFilters({ ...filters, role: e.target.value })}>
-            <option value="">All roles</option>
+            <option value="">Users and admins</option>
             {ROLES.map((r) => (
               <option key={r} value={r}>
                 {ROLE_NAMES[r]}
@@ -133,7 +131,7 @@ export function UsersPage() {
           <Loading />
         ) : (
           <>
-            <Table headers={["User ID", "Name", "Role", "Department", "Last sign-in", ""]} empty={list.data?.items.length === 0}>
+            <Table headers={["User ID", "Name", "Access", "Department", "Last sign-in", ""]} empty={list.data?.items.length === 0}>
               {list.data?.items.map((u) => (
                 <tr key={u.id} className={u.is_active ? "" : "text-slate-400"}>
                   <Td className="font-mono text-xs">{u.username}</Td>
@@ -178,7 +176,7 @@ export function UsersPage() {
         )}
       </Card>
 
-      <Card title="What each role can do" className="mt-4">
+      <Card title="What each account can do" className="mt-4">
         <dl className="grid gap-3 text-sm md:grid-cols-2">
           {ROLES.map((r) => (
             <div key={r}>
@@ -243,7 +241,7 @@ function AccountForm({
     username: user?.username ?? "",
     full_name: user?.full_name ?? "",
     email: user?.email ?? "",
-    role: (user?.role ?? "operator") as Role,
+    role: (user?.role ?? "user") as Role,
     department_id: user?.department_id ?? "",
     passwordMode: "generate" as "generate" | "set",
     password: "",
@@ -290,7 +288,7 @@ function AccountForm({
         <Field label="Email (optional)">
           <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </Field>
-        <Field label="Role (access)" hint={editingSelf ? "You cannot change your own role." : ROLE_ACCESS[form.role]}>
+        <Field label="Access" hint={editingSelf ? "You cannot change your own access." : ROLE_ACCESS[form.role]}>
           <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })} disabled={editingSelf}>
             {ROLES.map((r) => (
               <option key={r} value={r}>

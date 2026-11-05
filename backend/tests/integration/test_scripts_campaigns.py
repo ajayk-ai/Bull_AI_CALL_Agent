@@ -22,9 +22,9 @@ def script_body(**extra) -> dict:
 @pytest.fixture
 async def team(make_user, scm):
     return {
-        "manager": await make_user(Role.CAMPAIGN_MANAGER, scm),
-        "hod": await make_user(Role.HOD, scm),
-        "operator": await make_user(Role.OPERATOR, scm),
+        "manager": await make_user(Role.USER, scm),
+        "hod": await make_user(Role.USER, scm),
+        "operator": await make_user(Role.USER, scm),
     }
 
 
@@ -41,7 +41,7 @@ async def publish_script(client, team) -> tuple[str, str]:
 # ---- scripts ----
 
 
-async def test_script_version_lifecycle(client, team):
+async def test_script_version_lifecycle(client, team, admin):
     manager, hod = team["manager"], team["hod"]
     created = await client.post(f"{API}/scripts", headers=manager.headers, json=script_body())
     assert created.status_code == 201, created.text
@@ -59,14 +59,13 @@ async def test_script_version_lifecycle(client, team):
     edited = await client.put(f"{API}/script-versions/{v1['id']}", headers=manager.headers, json=body)
     assert edited.json()["config"]["limits"]["max_call_seconds"] == 240
 
-    # Approval: operators and managers cannot approve; HOD can; nothing to approve before submit.
+    # Approval needs a second person: the author cannot approve; a colleague can. Nothing to approve before submit.
     assert (
         await client.post(f"{API}/script-versions/{v1['id']}/approve", headers=hod.headers, json={})
     ).status_code == 409
     await client.post(f"{API}/script-versions/{v1['id']}/submit", headers=manager.headers)
-    for actor in (team["operator"], manager):
-        response = await client.post(f"{API}/script-versions/{v1['id']}/approve", headers=actor.headers, json={})
-        assert response.status_code == 403
+    response = await client.post(f"{API}/script-versions/{v1['id']}/approve", headers=manager.headers, json={})
+    assert response.status_code == 403
     rejected = await client.post(
         f"{API}/script-versions/{v1['id']}/reject", headers=hod.headers, json={"comments": "Shorten the intro"}
     )
@@ -95,13 +94,13 @@ async def test_script_version_lifecycle(client, team):
 
     actions = [
         e["action"]
-        for e in (await client.get(f"{API}/audit-logs?entity_id={v1['id']}", headers=hod.headers)).json()["items"]
+        for e in (await client.get(f"{API}/audit-logs?entity_id={v1['id']}", headers=admin.headers)).json()["items"]
     ]
     assert actions.count("script_version.approve") == 1 and "script_version.reject" in actions
 
 
 async def test_author_cannot_approve_own_script(client, make_user, scm):
-    hod = await make_user(Role.HOD, scm)
+    hod = await make_user(Role.USER, scm)
     script = (await client.post(f"{API}/scripts", headers=hod.headers, json=script_body())).json()
     version_id = script["versions"][0]["id"]
     await client.post(f"{API}/script-versions/{version_id}/submit", headers=hod.headers)
@@ -110,19 +109,20 @@ async def test_author_cannot_approve_own_script(client, make_user, scm):
     assert "other than its author" in response.json()["error"]["message"]
 
 
-async def test_invalid_script_rejected_and_scripts_are_department_scoped(client, team, make_user, quality):
+async def test_invalid_script_rejected_and_scripts_are_department_scoped(client, team, make_user, scm, quality):
     bad = script_body()
     bad["config"]["closing"]["statement"] = "Thanks {context.unknown_field}"
     response = await client.post(f"{API}/scripts", headers=team["manager"].headers, json=bad)
     assert response.status_code == 422
 
     script = (await client.post(f"{API}/scripts", headers=team["manager"].headers, json=script_body())).json()
-    qa = await make_user(Role.HOD, quality)
+    qa = await make_user(Role.USER, quality)
     assert (await client.get(f"{API}/scripts/{script['id']}", headers=qa.headers)).status_code == 404
     assert (await client.get(f"{API}/scripts", headers=qa.headers)).json() == []
     assert (await client.get(f"{API}/scripts", headers=team["operator"].headers)).status_code == 200
+    # A user cannot create a script in another department.
     assert (
-        await client.post(f"{API}/scripts", headers=team["operator"].headers, json=script_body())
+        await client.post(f"{API}/scripts", headers=qa.headers, json=script_body(department_id=str(scm.id)))
     ).status_code == 403
 
 
@@ -226,6 +226,7 @@ async def test_hod_self_submitted_campaign_needs_another_approver(client, team, 
 
 async def test_campaign_validation(client, team, make_user, quality, admin):
     manager = team["manager"]
+    qa_user = await make_user(Role.USER, quality)
     script = (await client.post(f"{API}/scripts", headers=manager.headers, json=script_body())).json()
     draft_version = script["versions"][0]["id"]
     # Draft scripts cannot be used.
@@ -245,7 +246,7 @@ async def test_campaign_validation(client, team, make_user, quality, admin):
         ({"max_concurrency": 6}, 422),  # above the platform limit of 5
         ({"start_date": "2026-12-10", "end_date": "2026-12-01"}, 422),
         ({"calling_window": {"start": "19:00", "end": "09:00"}}, 422),
-        ({"owner_id": str(team["operator"].id)}, 422),  # operators cannot own campaigns
+        ({"owner_id": str(qa_user.id)}, 422),  # the owner must belong to the campaign's department
     ]
     for extra, expected in cases:
         body = {"name": "C", "script_version_id": v, **extra}
@@ -285,7 +286,7 @@ async def test_campaigns_are_department_scoped(client, team, make_user, quality)
             f"{API}/campaigns", headers=team["manager"].headers, json={"name": "C", "script_version_id": version_id}
         )
     ).json()
-    qa = await make_user(Role.HOD, quality)
+    qa = await make_user(Role.USER, quality)
     assert (await client.get(f"{API}/campaigns/{campaign['id']}", headers=qa.headers)).status_code == 404
     assert (await client.get(f"{API}/campaigns", headers=qa.headers)).json()["total"] == 0
     # A QA contact cannot be added to an SCM campaign.

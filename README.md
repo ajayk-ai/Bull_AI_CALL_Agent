@@ -109,14 +109,14 @@ There is no Nginx for now; HTTPS is provided by a Cloudflare tunnel to port 8083
 
 One platform serves every department. **Only admins create accounts and grant access** (Admin > Users and access):
 
-- Each account has a **user ID** for signing in (e-mail is optional and also accepted at sign-in), a role and,
-  except for admins, a department. The role decides what the person can do (table below); the department
-  decides which records they see.
+- There are two kinds of account: **Admin** and **User**. The admin makes an account for each person who needs
+  one. Each account has a **user ID** for signing in (e-mail is optional and also accepted at sign-in) and,
+  except for admins, a department, which decides the records the person sees (table below).
 - The admin types a password or has one generated. It is shown once, to pass on to the user, and the user must
   choose their own at first sign-in before they can do anything else.
-- The admin can edit name, e-mail, role and department, reset a password (the user is signed out and gets a new
+- The admin can edit name, e-mail, access and department, reset a password (the user is signed out and gets a new
   temporary one), unlock an account after five failed sign-ins, and deactivate or reactivate it. The last active
-  admin cannot be removed, and nobody can change their own role or deactivate themselves.
+  admin cannot be removed, and nobody can change their own access or deactivate themselves.
 - Every user can change their own password (header > Change password). Every account action is in the audit log;
   passwords never are.
 
@@ -129,8 +129,8 @@ The first admin is created on the server with the CLI command above; after that,
   `skip_invalid_rows` saves the valid rows instead. The error report downloads as CSV. Into a campaign, rows with
   the same phone number become one contact with several items (one per PO), and the script's required fields
   (PO number, material, original delivery date) are checked row by row.
-- **Scripts**: each change is a new version. Draft, then submit, then approval by a HOD or admin who is not the
-  author. Publishing retires the previous version; campaigns keep the exact version they were approved with.
+- **Scripts**: each change is a new version. Draft, then submit, then approval by someone other than the
+  author (a colleague in the department, or an admin). Publishing retires the previous version; campaigns keep the exact version they were approved with.
 - **Campaigns**: draft, then submit (checks script, contacts and their data), then approval by someone other than
   the submitter. Start, pause and resume arrive with the calling engine in Phase 4.
 
@@ -168,19 +168,18 @@ FreJun  --POST /telephony/frejun/status--> app: ringing / no-answer / completed 
 ## Security notes
 
 - Phone numbers are stored encrypted (Fernet, `DATA_ENCRYPTION_KEY`) with a keyed HMAC (`PHONE_HASH_KEY`) for
-  look-ups and duplicate detection. API responses show masked numbers only. The full number is available to HOD
-  and admin roles through `GET /contacts/{id}/phone`, and every such request is audited.
+  look-ups and duplicate detection. API responses show masked numbers only. The full number is available to the
+  department's users and to admins through `GET /contacts/{id}/phone`, and every such request is audited.
 - **Back up `DATA_ENCRYPTION_KEY` and `PHONE_HASH_KEY` separately from the database.** Without the first, stored
   numbers cannot be read; changing the second breaks duplicate detection and do-not-call matching.
-- Five failed logins for an e-mail lock it for 15 minutes. Password changes, resets, deactivation and role changes
+- Five failed sign-ins lock an account for 15 minutes. Password changes, resets, deactivation and access changes
   sign the user out of all sessions.
-- Non-admin users are confined to their own department; other departments' records return 404.
+- Users are confined to their own department; other departments' records return 404.
 
-## Roles
+## Account types
 
-| Permission | Operator | Campaign Manager | HOD | Admin |
-|---|:-:|:-:|:-:|:-:|
-| Read contacts, scripts and campaigns; place individual calls; record consent; add DNC entries | ✓ | ✓ | ✓ | ✓ |
-| Create, edit, delete contacts; upload files; write scripts and campaigns | | ✓ | ✓ | ✓ |
-| Approve scripts and campaigns, view full phone numbers, remove DNC entries, see the department's users, read audit log | | | ✓ (own dept) | ✓ |
-| Create accounts and grant access, manage departments, global DNC entries | | | | ✓ |
+| What they can do | User | Admin |
+|---|:-:|:-:|
+| Contacts, uploads, scripts, campaigns, calls, consent and do-not-call entries | ✓ (own department) | ✓ (all) |
+| Approve a script or campaign written or submitted by someone else | ✓ (own department) | ✓ |
+| Create accounts and give access, manage departments, global do-not-call entries, read the audit log | | ✓ |

@@ -202,7 +202,5 @@ export const LANGUAGE_NAMES: Record<string, string> = {
 
 export const ROLE_NAMES: Record<string, string> = {
   admin: "Admin",
-  hod: "HOD",
-  campaign_manager: "Campaign Manager",
-  operator: "Operator",
+  user: "User",
 };

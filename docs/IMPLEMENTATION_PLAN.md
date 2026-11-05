@@ -222,7 +222,7 @@ Each milestone ends with tests passing and a short demo. A feature is reported c
 
 | Phase | Deliverable | Acceptance |
 |---|---|---|
-| **1. Foundation** | Repo structure, Compose dev stack (postgres, redis, minio), settings, logging, Alembic baseline, all core tables, JWT auth, users, departments, RBAC, audit log, contacts CRUD, DNC, consent, health checks | Unit + integration tests green; OpenAPI at `/api/v1/docs`; department isolation test proves HOD of dept A cannot read dept B |
+| **1. Foundation** | Repo structure, Compose dev stack (postgres, redis, minio), settings, logging, Alembic baseline, all core tables, JWT auth, users, departments, RBAC, audit log, contacts CRUD, DNC, consent, health checks | Unit + integration tests green; OpenAPI at `/api/v1/docs`; department isolation test proves a user of dept A cannot read dept B |
 | **2. Campaigns and scripts** | Excel/CSV import with row-level error report, duplicate detection, import history, campaigns CRUD and state machine, script builder API, versioning, approval workflow, SCM delivery confirmation script and extraction schema as seed data; minimal React UI for these | Import of a 500-row file with deliberate errors yields the exact error report; a published script version cannot be edited |
 | **3a. Voice POC (single call)** | `TelephonyProvider` + mock + FreJun adapter, voice gateway, FSM, Gemini Live engine, tool gating, transcript and recording to MinIO, individual call API | **10 real calls** to internal test numbers (Tamil, English, Hindi, mixed) with transcripts, recordings and latency report. Mock-mode tests in CI |
 | ~~3b. Provider evaluation~~ | Dropped (D1, D2). Language quality for Hindi and Tamil-English mix is still measured in Phase 3a calls | |
