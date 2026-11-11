@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 
-import { Badge, Button, Card, ErrorBox, Field, Input, LANGUAGE_NAMES, Loading, Notice, PageHeader, Pager, Select, StatusBadge, Table, Td, formatDate } from "../components/ui";
+import { Badge, Button, Card, ErrorBox, Field, Input, LANGUAGE_NAMES, Loading, PageHeader, Pager, Select, StatusBadge, Table, Td, formatDate } from "../components/ui";
 import { api, query } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAction, useApi } from "../lib/hooks";
@@ -31,6 +31,12 @@ export function CampaignDetailPage() {
     contacts.reload();
     approvals.reload();
   };
+
+  const run = (name: "start" | "pause" | "resume") =>
+    action.run(async () => {
+      await api.post(`/campaigns/${c.id}/${name}`);
+      reloadAll();
+    });
 
   const step = (name: "submit" | "approve" | "reject" | "cancel") => {
     if (name === "cancel" && !window.confirm("Cancel this campaign? This cannot be undone.")) return;
@@ -66,8 +72,8 @@ export function CampaignDetailPage() {
         }
       />
       <ErrorBox error={action.error} />
-      {c.status === "approved" && (
-        <Notice tone="blue">Approved. Calling starts once the calling engine is enabled (Phase 4); no calls are made yet.</Notice>
+      {["approved", "running", "paused", "completed"].includes(c.status) && (
+        <Calling campaign={c} canRun={can("campaigns:write")} busy={action.busy} onRun={run} onRefresh={reloadAll} />
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -79,7 +85,7 @@ export function CampaignDetailPage() {
               <Loading />
             ) : (
               <>
-                <Table headers={["Contact", "Phone", "Items", "Status", ""]} empty={contacts.data?.items.length === 0}>
+                <Table headers={["Contact", "Phone", "Items", "Status", "Attempts", ""]} empty={contacts.data?.items.length === 0}>
                   {contacts.data?.items.map((m) => (
                     <tr key={m.id}>
                       <Td>
@@ -95,7 +101,9 @@ export function CampaignDetailPage() {
                       </Td>
                       <Td>
                         <StatusBadge status={m.status} />
+                        {m.outcome && <p className="text-xs text-slate-500">{m.outcome}</p>}
                       </Td>
+                      <Td className="text-xs">{m.attempts || "-"}</Td>
                       <Td className="text-right">
                         {isDraft && can("campaigns:write") && (
                           <Button variant="ghost" onClick={() => removeContact(m.contact_id)}>
@@ -292,4 +300,61 @@ function toForm(c: Campaign) {
     max_attempts: String(c.max_attempts),
     retry_interval_minutes: String(c.retry_interval_minutes),
   };
+}
+
+const PROGRESS_ORDER = ["pending", "in_progress", "retry_scheduled", "completed", "failed", "skipped"];
+
+/** Start / pause / resume, and where the campaign has got to. The server's dialer places the calls. */
+function Calling({
+  campaign: c,
+  canRun,
+  busy,
+  onRun,
+  onRefresh,
+}: {
+  campaign: Campaign;
+  canRun: boolean;
+  busy: boolean;
+  onRun: (name: "start" | "pause" | "resume") => void;
+  onRefresh: () => void;
+}) {
+  // While calling, refresh every 5 seconds so progress and statuses stay current.
+  useEffect(() => {
+    if (c.status !== "running") return;
+    const timer = window.setInterval(onRefresh, 5000);
+    return () => window.clearInterval(timer);
+  }, [c.status, onRefresh]);
+
+  const done = (c.progress.completed ?? 0) + (c.progress.failed ?? 0) + (c.progress.skipped ?? 0);
+  return (
+    <Card title="Calling" className="mb-4">
+      <div className="flex flex-wrap items-center gap-3">
+        {canRun && c.status === "approved" && (
+          <Button onClick={() => onRun("start")} disabled={busy}>
+            Start calling
+          </Button>
+        )}
+        {canRun && c.status === "running" && (
+          <Button variant="secondary" onClick={() => onRun("pause")} disabled={busy}>
+            Pause
+          </Button>
+        )}
+        {canRun && c.status === "paused" && (
+          <Button onClick={() => onRun("resume")} disabled={busy}>
+            Resume
+          </Button>
+        )}
+        <p className="text-sm text-slate-600">
+          {done} of {c.contact_count} done ·{" "}
+          {PROGRESS_ORDER.filter((s) => c.progress[s])
+            .map((s) => `${c.progress[s]} ${s.replace("_", " ")}`)
+            .join(" · ") || "no contacts"}
+        </p>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">
+        Calls go out one at a time, inside the calling hours. Unanswered calls are retried {c.retry_interval_minutes} minutes later, up to{" "}
+        {c.max_attempts} attempts. Pausing lets the call in progress finish. Results are on the <Link className="underline" to={`/calls?campaign_id=${c.id}`}>Calls</Link> page.
+      </p>
+    </Card>
+  );
 }

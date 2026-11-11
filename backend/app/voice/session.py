@@ -15,6 +15,7 @@ from app.voice import engine as ev
 from app.voice.audio import Downsampler
 from app.voice.fsm import ConversationGuard, GuardAction
 from app.voice.prompt import GREETING_TRIGGER, OUTCOMES, SILENCE_NUDGE, WRAP_UP_NUDGE
+from app.voice.scenario import ScenarioController
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class SessionResult:
     turns: list[dict[str, Any]] = field(default_factory=list)
     metrics: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    scenario: dict[str, Any] | None = None  # answers recorded through the scenario graph
 
     @property
     def we_hung_up(self) -> bool:
@@ -59,7 +61,9 @@ class CallSession:
         config: ev.EngineConfig,
         guard: ConversationGuard,
         clock=time.monotonic,
+        scenario: ScenarioController | None = None,
     ) -> None:
+        self.scenario = scenario
         self.phone = phone
         self.engine = engine
         self.config = config
@@ -178,6 +182,14 @@ class CallSession:
         self._finish(self.end_reason or "engine_closed")
 
     async def _handle_tool(self, session: ev.EngineSession, call: ev.ToolCall) -> None:
+        if call.name == "record_answer" and self.scenario is not None:
+            try:
+                result = await self.scenario.record(call.args)
+            except Exception:  # a bug here must not end the call; the agent carries on from its plan
+                log.exception("Scenario graph failed on %s", call.args)
+                result = {"accepted": True, "next": "Continue with the next question in your plan."}
+            await session.send_tool_result(call, result)
+            return
         if call.name != "end_call":
             log.warning("Agent called unknown tool %r", call.name)
             await session.send_tool_result(call, {"error": f"unknown tool {call.name}"})
@@ -220,7 +232,10 @@ class CallSession:
         error = None
         try:
             async with self.engine.connect(self.config) as session:
-                await session.send_text(GREETING_TRIGGER)
+                greeting = GREETING_TRIGGER
+                if self.scenario is not None:
+                    greeting += f" After the introduction: {self.scenario.first_instruction()}"
+                await session.send_text(greeting)
                 tasks = [
                     asyncio.create_task(self._caller_to_engine(session)),
                     asyncio.create_task(self._engine_to_caller(session)),
@@ -258,4 +273,5 @@ class CallSession:
             turns=self.turns,
             metrics=self.metrics,
             error=error,
+            scenario=self.scenario.snapshot() if self.scenario is not None else None,
         )

@@ -105,6 +105,7 @@ class CampaignOut(ORMModel):
     created_at: datetime
     updated_at: datetime
     contact_count: int = 0
+    progress: dict[str, int] = {}  # campaign contacts by status: pending, in_progress, completed, ...
 
 
 class ApprovalOut(ORMModel):

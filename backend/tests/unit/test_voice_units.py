@@ -276,7 +276,7 @@ def test_gemini_session_config_builds_with_tool():
     assert declaration.name == "end_call" and "outcome" in declaration.parameters_json_schema["properties"]
     assert live.realtime_input_config.automatic_activity_detection.silence_duration_ms == 300
     described = ev.GeminiLiveEngine().describe(config)
-    assert described["model"] == "gemini-3.8-live" and described["tools"] == ["end_call"]
+    assert described["model"] == "gemini-3.8-live" and described["tools"] == ["end_call", "record_answer"]
 
 
 def test_gemini_messages_translate_to_events():

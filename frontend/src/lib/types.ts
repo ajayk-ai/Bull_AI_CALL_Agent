@@ -169,6 +169,7 @@ export interface Campaign {
   max_attempts: number;
   retry_interval_minutes: number;
   contact_count: number;
+  progress: Record<string, number>;
   created_at: string;
 }
 
@@ -181,6 +182,7 @@ export interface CampaignContact {
   do_not_call: boolean;
   status: string;
   attempts: number;
+  outcome: string | null;
   context: { items?: Record<string, string>[] };
 }
 
@@ -290,7 +292,31 @@ export interface CallDetail extends Call {
     reply_ms?: number[];
     silence_prompts?: number;
   };
+  answers: CallAnswers | null;
+  extraction: Extraction | null;
   transcript: TranscriptTurn[];
   events: { event_type: string; payload: Record<string, unknown>; received_at: string }[];
   recordings: { id: string; bucket: string; created_at: string }[];
+}
+
+/** Answers recorded live through the LangGraph scenario controller. */
+export interface CallAnswers {
+  answers: Record<string, unknown>;
+  lines: { line: number; context: Record<string, string>; answers: Record<string, unknown> }[];
+  complete: boolean;
+  pending: string | null;
+  log: { question_id: string; value: unknown; line?: number | null; accepted: boolean; problem?: string | null }[];
+}
+
+/** The structured result extracted after the call (LangChain + Gemini). */
+export interface Extraction {
+  id: string;
+  model: string;
+  status: "pending" | "validated" | "needs_review" | "verified" | "rejected";
+  validated: Record<string, unknown> | null;
+  raw: Record<string, unknown>;
+  validation_errors: string[];
+  confidence: number | null;
+  summary: string | null;
+  created_at: string;
 }

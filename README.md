@@ -12,10 +12,11 @@ The design, decisions and roadmap are in [docs/IMPLEMENTATION_PLAN.md](docs/IMPL
 |---|---|---|
 | 1. Foundation | Database (all 22 tables, Alembic), JWT auth, users, departments, RBAC with department isolation, contacts, consent, do-not-call, audit log, health checks, Docker | Done |
 | 2. Campaigns and scripts | Excel/CSV upload with column mapping, script builder with versions and approval, campaigns with approval, SCM script, encrypted file storage, React UI | Done |
-| 3. Real-time voice POC | FreJun (Teler) + Gemini Live call pipeline, call state machine and guards, signed webhooks, individual calls (API + UI), mock mode | Built and tested in simulation (125 backend + 10 frontend tests, browser walkthroughs). **No real call made yet**: waiting for credentials |
+| 3. Real-time voice POC | FreJun (Teler) + Gemini Live call pipeline, call state machine and guards, signed webhooks, individual calls (API + UI), mock mode | Built and tested in simulation |
+| 3b. Scenario calls | LangGraph scenario controller during the call, LangChain + Gemini structured result after it, campaign dialer (one channel, one call at a time, retries) | Built and tested in simulation (135 backend + 10 frontend tests). **No real call made yet**: waiting for FreJun and Gemini keys |
 
 Calling is **off** by default (`TELEPHONY_MODE=disabled`). No real call has been placed yet; see
-"Making the first real call" below.
+"Running a scenario call" below.
 
 ## Layout
 
@@ -152,16 +153,36 @@ File storage is a local directory (Docker volume `storage`). Uploaded files are 
 `DATA_ENCRYPTION_KEY`. MinIO was planned but its Docker images are no longer published; storage sits behind an
 interface so an S3-compatible service can be added later.
 
-## Calling (Phase 3)
+## Calling
 
 ```
 FreJun  --POST /telephony/frejun/flow-->   app: "stream to wss://.../media"
 FreJun  <==WS /telephony/frejun/media==>  app <==> Gemini Live (speech to speech)
+                                                    |  record_answer / end_call (tools)
+                                                    v
+                                            LangGraph scenario graph: checks each answer, decides what to ask next
 FreJun  --POST /telephony/frejun/status--> app: ringing / no-answer / completed / recording
+after the call:  transcript + recorded answers --> LangChain + Gemini text --> structured result (script's schema)
 ```
 
+**AI stack (hybrid).** Gemini Live listens and speaks, so replies stay fast (no separate speech-to-text or
+text-to-speech). The order of the call is run by a **LangGraph** graph built from the script's questions
+([app/voice/scenario.py](backend/app/voice/scenario.py)): whenever the caller answers, the agent calls
+`record_answer`; the graph checks the answer (yes/no, real date, "revised date not before the original", ranges,
+choices), stores it per PO line, and tells the agent the next question, the next line, or to read back and close.
+After the call a **LangChain** chain over a Gemini text model (`GEMINI_TEXT_MODEL`) turns the transcript and the
+recorded answers into the script's result schema ([app/services/extraction.py](backend/app/services/extraction.py)).
+The result is checked against the schema; it is marked **needs review** when it fails the schema, confidence is
+below 0.7, or the call ended before every question was asked.
+
+**One channel, one call at a time.** `CALL_CHANNELS=1` (default): any call waits until the current one ends.
+The campaign dialer ([app/services/dialer.py](backend/app/services/dialer.py)) runs inside the app when calling
+is on. For each running campaign, inside its calling hours, it calls the contacts one after another. No answer,
+busy or an early hang-up is retried after the campaign's retry interval, up to its maximum attempts. Do-not-call
+contacts are skipped. Campaign page: **Start calling**, **Pause** (the call in progress finishes), **Resume**.
+
 - Every URL given to FreJun carries a signed token for that call and purpose; the media stream is single-use.
-- The call controller (not the AI) checks do-not-call, calling hours, the 5-call limit and that the number is
+- The call controller (not the AI) checks do-not-call, calling hours, the channel limit and that the number is
   not already being called; it hangs up on silence, turn and time limits. The AI can only end the call
   (`end_call` with an outcome). If the outcome is `opted_out`, the number goes on the do-not-call list by rule.
 - Each call stores the exact script version, prompt, model, voice and settings used (`ai_config`), the
@@ -169,14 +190,21 @@ FreJun  --POST /telephony/frejun/status--> app: ringing / no-answer / completed 
 - `TELEPHONY_MODE=mock` simulates the phone network for development; such calls are stored and shown as
   **simulated** and are refused when `APP_ENV=production`.
 
-### Making the first real call
+### Running a scenario call
 
 1. Put the FreJun and Gemini values in `.env`: `TELER_API_KEY`, `FREJUN_PHONE_NUMBER`, `GEMINI_API_KEY`.
 2. Set `PUBLIC_URL=https://ai.bullmachine.in/aicall` (it must end with `BASE_PATH`; the app checks this).
    FreJun reaches the app through the shared nginx, as it does for `/voicecall/`.
 3. Set `TELEPHONY_MODE=live` and restart: `docker compose -f deploy/docker-compose.yml --env-file .env up -d`.
    The app refuses to start if anything required for live calls is missing.
-4. In the app: approve the SCM script, add an internal test contact, then Calls > New call.
+4. Load the scenario (the SCM delivery confirmation script) and approve it in the app (a second person, or an
+   admin, approves): `docker compose -f deploy/docker-compose.yml --env-file .env exec app python -m app.cli
+   seed-scm-script --department SCM`.
+5. **One call:** Calls > New call: the test number, the script, and one PO line (PO number, material, original
+   delivery date). The call page shows the transcript live, then the answers recorded during the call and the
+   extracted result.
+6. **One by one:** a campaign with a few internal test contacts (upload or add them, each with its PO lines),
+   submit, approve, then **Start calling**. The dialer calls them one after another.
 
 ## Security notes
 

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { DepartmentPicker, departmentPayload } from "../components/DepartmentPicker";
 import { Badge, Button, Card, ErrorBox, Field, Input, LANGUAGE_NAMES, Loading, Notice, PageHeader, Pager, Select, StatusBadge, Table, Td, formatDate } from "../components/ui";
@@ -29,7 +29,9 @@ export function CallsPage() {
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const mode = useApi<{ mode: string }>("/calls/mode");
-  const list = useApi<Page<Call>>(`/calls${query({ page, page_size: PAGE_SIZE })}`);
+  const [params] = useSearchParams();
+  const campaignId = params.get("campaign_id") ?? undefined;
+  const list = useApi<Page<Call>>(`/calls${query({ page, page_size: PAGE_SIZE, campaign_id: campaignId })}`);
 
   return (
     <>

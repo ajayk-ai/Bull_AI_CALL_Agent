@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.api.deps import ContextDep, SessionDep, require
 from app.models.enums import CampaignStatus
@@ -108,3 +108,15 @@ async def cancel_campaign(
 @router.get("/{campaign_id}/approvals", response_model=list[ApprovalOut])
 async def list_approvals(campaign_id: uuid.UUID, user: ReadCampaigns, session: SessionDep):
     return await campaigns.list_approvals(session, user, campaign_id)
+
+
+@router.post("/{campaign_id}/{action}", response_model=CampaignOut)
+async def run_campaign(
+    campaign_id: uuid.UUID,
+    action: Annotated[str, Path(pattern="^(start|pause|resume)$")],
+    user: WriteCampaigns,
+    session: SessionDep,
+    ctx: ContextDep,
+):
+    """Start, pause or resume calling. Calls go out one at a time per channel (CALL_CHANNELS)."""
+    return await campaigns.set_running(session, user, campaign_id, action, ctx)

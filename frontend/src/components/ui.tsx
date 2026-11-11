@@ -102,6 +102,11 @@ const statusTones: Record<string, keyof typeof tones> = {
   in_progress: "blue",
   no_answer: "amber",
   busy: "amber",
+  retry_scheduled: "amber",
+  skipped: "slate",
+  validated: "green",
+  verified: "green",
+  needs_review: "amber",
 };
 
 export function StatusBadge({ status }: { status: string }) {

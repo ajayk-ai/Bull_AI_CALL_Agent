@@ -119,3 +119,21 @@ class FakePhone:
 
     async def close(self) -> None:
         self.closed = True
+
+
+def scenario_conversation(answers: list[dict[str, Any]]):
+    """Like supplier_conversation, but the agent records each answer with record_answer before closing."""
+
+    def on_text(session: FakeEngineSession, text: str) -> None:
+        if text.startswith("The call has just been answered"):
+            session.emit(*agent_says("Hello, this is the Bull Machines calling assistant. Am I speaking with Ravi?"))
+
+    def on_audio(session: FakeEngineSession, n: int) -> None:
+        if n == 3:
+            session.emit(ev.CallerText("Yes. PO 450001 is late, raw material shortage, new date 5 December."))
+            for i, args in enumerate(answers):
+                session.emit(ev.ToolCall(id=f"r{i}", name="record_answer", args=args))
+            session.emit(*agent_says("Thank you for confirming. Have a good day."))
+            session.emit(ev.ToolCall(id="end", name="end_call", args={"outcome": "completed"}))
+
+    return FakeEngine(on_text, on_audio)

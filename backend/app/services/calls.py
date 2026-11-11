@@ -22,13 +22,15 @@ from app.core.errors import AppError, Conflict, NotFound, TooManyRequests, Valid
 from app.core.redis import get_redis
 from app.core.security import decrypt
 from app.models.calls import Call, CallEvent, Recording, Transcript
+from app.models.campaigns import Campaign, CampaignContact
 from app.models.contacts import Contact, DoNotCall
 from app.models.enums import CallStatus, ScriptVersionStatus
+from app.models.extraction import ExtractedResult
 from app.models.org import User
 from app.models.scripts import Script, ScriptVersion
 from app.providers.telephony import CallUrls, TelephonyError, TelephonyProvider, frejun
 from app.rbac.permissions import can_see, resolve_department, visible_departments
-from app.schemas.calls import CallCreate, CallDetail, CallEventOut, CallOut, RecordingOut
+from app.schemas.calls import CallCreate, CallDetail, CallEventOut, CallOut, ExtractionOut, RecordingOut
 from app.schemas.campaigns import CallingWindow
 from app.schemas.common import PageParams
 from app.services import audit, windows
@@ -38,6 +40,7 @@ from app.voice import tokens
 from app.voice.engine import EngineConfig, VoiceEngine
 from app.voice.fsm import ACTIVE, TERMINAL, ConversationGuard, after_provider_end, can_move
 from app.voice.prompt import TOOLS, build_instructions
+from app.voice.scenario import ScenarioController
 from app.voice.session import SessionResult
 
 log = logging.getLogger(__name__)
@@ -115,9 +118,12 @@ async def place_call(
     data: CallCreate,
     telephony: TelephonyProvider,
     engine: VoiceEngine,
-    ctx: RequestContext,
+    ctx: RequestContext | None,
     at: datetime | None = None,
+    campaign: Campaign | None = None,
+    campaign_contact: CampaignContact | None = None,
 ) -> Call:
+    """Places one call. Individual calls come from users; campaign calls from the dialer (app/services/dialer.py)."""
     settings = get_settings()
     at = at or _now()
 
@@ -157,19 +163,22 @@ async def place_call(
     # Whether it may be placed now.
     if await is_suppressed(session, number.hash, department_id):
         raise Conflict("This number is on the do-not-call list")
-    window = CallingWindow()
-    if settings.individual_call_window_enforced and not windows.in_window(window, at):
+    window = CallingWindow.model_validate(campaign.calling_window or {}) if campaign else CallingWindow()
+    if (campaign or settings.individual_call_window_enforced) and not windows.in_window(window, at):
         raise Conflict(f"Calls can only be placed during calling hours: {windows.describe(window)}")
     await _expire_stale_calls(session)
     active = await session.scalar(select(func.count()).where(Call.status.in_(ACTIVE))) or 0
-    if active >= settings.max_concurrent_calls:
-        raise TooManyRequests(f"{active} calls are already in progress (limit {settings.max_concurrent_calls})")
+    if active >= settings.call_limit:
+        raise TooManyRequests(f"{active} call(s) already in progress (limit {settings.call_limit})")
 
     instructions = build_instructions(config, person, data.context.get("items") or [], language)
     econfig = engine_config(config, instructions, language)
     call = Call(
         id=uuid.uuid7(),
         department_id=department_id,
+        campaign_id=campaign.id if campaign else None,
+        campaign_contact_id=campaign_contact.id if campaign_contact else None,
+        attempt_no=campaign_contact.attempts if campaign_contact else 1,  # the dialer counts this attempt
         contact_id=contact.id if contact else None,
         initiated_by_id=actor.id,
         phone_encrypted=number.encrypted,
@@ -317,10 +326,11 @@ async def claim_media(session: AsyncSession, call: Call) -> bool:
     return True
 
 
-async def session_setup(session: AsyncSession, call: Call) -> tuple[EngineConfig, dict]:
+async def session_setup(session: AsyncSession, call: Call) -> tuple[EngineConfig, dict, ScenarioController]:
     version = await session.get(ScriptVersion, call.script_version_id)
     econfig = engine_config(version.config, call.ai_config["system_instruction"], call.ai_config.get("language_hint"))
-    return econfig, version.config.get("limits") or {}
+    scenario = ScenarioController(version.config, (call.context or {}).get("items") or [])
+    return econfig, version.config.get("limits") or {}, scenario
 
 
 def make_guard(limits: dict, started_at: float) -> ConversationGuard:
@@ -343,6 +353,7 @@ async def finish(session: AsyncSession, call_id: uuid.UUID, result: SessionResul
     call.outcome_note = result.note
     call.end_reason = result.end_reason
     call.metrics = result.metrics
+    call.answers = result.scenario
     call.error = result.error
     call.ended_at = call.ended_at or now
     if call.answered_at:
@@ -455,4 +466,8 @@ async def get_call(session: AsyncSession, actor: User, call_id: uuid.UUID) -> Ca
     detail.events = [CallEventOut.model_validate(e) for e in events]
     recordings = await session.scalars(select(Recording).where(Recording.call_id == call.id))
     detail.recordings = [RecordingOut.model_validate(r) for r in recordings]
+    extraction = await session.scalar(
+        select(ExtractedResult).where(ExtractedResult.call_id == call.id).order_by(ExtractedResult.created_at.desc())
+    )
+    detail.extraction = ExtractionOut.model_validate(extraction) if extraction else None
     return detail

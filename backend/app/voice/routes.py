@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.db.session import get_sessionmaker
 from app.providers.telephony.frejun import FreJunMediaStream
-from app.services import calls
+from app.services import calls, extraction
 from app.voice import tokens
 from app.voice.deps import EngineDep, TelephonyDep
 from app.voice.session import CallSession
@@ -72,13 +72,14 @@ async def media(
             log.warning("Media stream refused for call %s", call_id)
             await websocket.close(code=WS_POLICY_VIOLATION)
             return
-        econfig, limits = await calls.session_setup(session, call)
+        econfig, limits, scenario = await calls.session_setup(session, call)
         provider_call_id = call.provider_call_id
 
     await websocket.accept()
     log.info("Call %s connected", call_id)
     stream = FreJunMediaStream(websocket)
-    result = await CallSession(stream, engine, econfig, calls.make_guard(limits, time.monotonic())).run()
+    guard = calls.make_guard(limits, time.monotonic())
+    result = await CallSession(stream, engine, econfig, guard, scenario=scenario).run()
     # Saving the call must not depend on the connection: run it as its own task, shielded from cancellation
     # of this handler, and waited for at shutdown (see pending_post_call_work).
     task = asyncio.create_task(_after_call(call_id, provider_call_id, result, telephony))
@@ -96,6 +97,12 @@ async def _after_call(call_id, provider_call_id: str | None, result, telephony) 
     async with get_sessionmaker()() as session:
         await calls.finish(session, call_id, result)
     log.info("Call %s ended: %s, outcome %s, %d turns", call_id, result.end_reason, result.outcome, len(result.turns))
+    # The structured result (LangChain + Gemini). Its failure never affects the stored call.
+    try:
+        async with get_sessionmaker()() as session:
+            await extraction.extract(session, call_id)
+    except Exception:
+        log.exception("Extraction for call %s failed", call_id)
 
 
 async def pending_post_call_work() -> None:

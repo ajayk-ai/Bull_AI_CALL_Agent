@@ -19,7 +19,7 @@ from app.models.scripts import Script, ScriptVersion
 from app.providers.telephony.mock import MockTelephony
 from app.seeds import scm_delivery
 from app.voice.deps import engine_dep, telephony_dep
-from tests.fakes import supplier_conversation
+from tests.fakes import scenario_conversation, supplier_conversation
 
 API = "/api/v1"
 ITEMS = {"items": [{"po_number": "450001", "material_description": "Hose", "original_delivery_date": "2026-11-20"}]}
@@ -87,7 +87,7 @@ def token_of(url: str) -> str:
 
 
 async def test_place_individual_call_with_mock_telephony(
-    client, operator, make_user, scm, version_id, telephony, engine
+    client, operator, make_user, scm, version_id, telephony, engine, monkeypatch
 ):
     manager = await make_user(Role.USER, scm)
     contact_id = await contact(client, manager)
@@ -110,7 +110,16 @@ async def test_place_individual_call_with_mock_telephony(
     assert "Ravi from ABC Industries" in detail["ai_config"]["system_instruction"]
     assert detail["ai_config"]["telephony"] == "mock" and detail["context"] == ITEMS
 
-    # The same number cannot be called twice at once.
+    # One channel (the default): any second call waits until this one ends.
+    other = await client.post(
+        f"{API}/calls",
+        headers=operator.headers,
+        json={"phone": "9123400000", "script_version_id": version_id, "context": ITEMS},
+    )
+    assert other.status_code == 429 and "limit 1" in other.json()["error"]["message"]
+
+    # With more channels, the same number still cannot be called twice at once.
+    monkeypatch.setattr(get_settings(), "call_channels", 5)
     again = await client.post(
         f"{API}/calls",
         headers=operator.headers,
@@ -342,3 +351,124 @@ async def test_opt_out_adds_number_to_do_not_call(client, operator, version_id, 
         json={"phone": "9123456780", "script_version_id": version_id, "context": ITEMS},
     )
     assert blocked.status_code == 409
+
+
+SCENARIO_ANSWERS = [
+    {"question_id": "identity_confirmed", "value": "yes"},
+    {"question_id": "po_confirmed", "value": "yes", "line": 1},
+    {"question_id": "on_time", "value": "no", "line": 1},
+    {"question_id": "delay_reason", "value": "Raw material shortage", "line": 1},
+    {"question_id": "revised_date", "value": "2026-11-01", "line": 1},  # earlier than the original: refused
+    {"question_id": "revised_date", "value": "2026-12-05", "line": 1},
+    {"question_id": "support_required", "value": "no"},
+]
+EXTRACTED = {
+    "result": {
+        "supplier_name": "ABC Industries",
+        "supplier_confirmed": True,
+        "items": [
+            {
+                "po_number": "450001",
+                "po_confirmed": True,
+                "delivery_status": "delayed",
+                "delay_reason": "Raw material shortage",
+                "original_delivery_date": "2026-11-20",
+                "revised_delivery_date": "2026-12-05",
+            }
+        ],
+        "support_required": False,
+        "support_details": None,
+        "opted_out": False,
+        "needs_followup": True,
+        "followup_reason": "Delivery delayed by two weeks",
+        "confidence": 0.92,
+    },
+    "summary": "PO 450001 is delayed to 5 December because of a raw material shortage. No support needed.",
+}
+
+
+async def test_scenario_graph_and_extraction_on_a_call(client, operator, version_id, telephony, monkeypatch):
+    """The whole hybrid pipeline: Gemini Live (fake) records answers through the LangGraph scenario, then the
+    LangChain extraction (fake chat model) produces the structured result."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    from app.services import extraction
+
+    llm = FakeListChatModel(responses=[json.dumps(EXTRACTED)])
+    monkeypatch.setattr(extraction, "get_extraction_llm", lambda: llm)
+    fake = scenario_conversation(SCENARIO_ANSWERS)
+    app.dependency_overrides[engine_dep] = lambda: fake
+    try:
+        call = (
+            await client.post(
+                f"{API}/calls",
+                headers=operator.headers,
+                json={"phone": "9123456780", "name": "Ravi", "script_version_id": version_id, "context": ITEMS},
+            )
+        ).json()
+        _, urls = telephony.placed[0]
+        flow = (await client.post(urlsplit(urls.flow_url)._replace(scheme="", netloc="").geturl())).json()
+        media_path = urlsplit(flow["ws_url"])._replace(scheme="", netloc="").geturl()
+        await asyncio.to_thread(_run_call, media_path, 5, call["id"], operator.headers)
+        for _ in range(50):  # extraction runs just after the call is saved
+            detail = (await client.get(f"{API}/calls/{call['id']}", headers=operator.headers)).json()
+            if detail["extraction"]:
+                break
+            await asyncio.sleep(0.1)
+    finally:
+        app.dependency_overrides.pop(engine_dep, None)
+
+    # The greeting told the agent what to ask first; every tool call got the graph's answer.
+    session = fake.sessions[0]
+    assert "Ask [identity_confirmed]" in session.texts[0]
+    results = [r for name, r in session.tool_results if name == "record_answer"]
+    assert [r["accepted"] for r in results] == [True, True, True, True, False, True, True]
+    assert results[-1]["next"].startswith("All questions are answered")
+    assert {t["name"] for t in fake.configs[0].tools} == {"end_call", "record_answer"}
+
+    answers = detail["answers"]
+    assert answers["complete"] is True and answers["answers"] == {"identity_confirmed": True, "support_required": False}
+    assert answers["lines"][0]["answers"]["revised_date"] == "2026-12-05"
+
+    extracted = detail["extraction"]
+    assert extracted["status"] == "validated" and extracted["validation_errors"] == []
+    assert extracted["validated"]["items"][0]["delivery_status"] == "delayed"
+    assert extracted["confidence"] == 0.92 and extracted["summary"].startswith("PO 450001")
+
+
+async def test_extraction_flags_results_for_review(client, operator, version_id, telephony, monkeypatch):
+    """Schema problems and early endings send the result to review instead of being trusted."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    from app.services import extraction
+
+    bad = copy.deepcopy(EXTRACTED)
+    bad["result"]["items"][0]["delivery_status"] = "late-ish"  # not one of the schema's values
+    monkeypatch.setattr(extraction, "get_extraction_llm", lambda: FakeListChatModel(responses=[json.dumps(bad)]))
+    fake = scenario_conversation(SCENARIO_ANSWERS[:2])  # hangs up after two answers
+    app.dependency_overrides[engine_dep] = lambda: fake
+    try:
+        call = (
+            await client.post(
+                f"{API}/calls",
+                headers=operator.headers,
+                json={"phone": "9123456781", "script_version_id": version_id, "context": ITEMS},
+            )
+        ).json()
+        _, urls = telephony.placed[0]
+        flow = (await client.post(urlsplit(urls.flow_url)._replace(scheme="", netloc="").geturl())).json()
+        media_path = urlsplit(flow["ws_url"])._replace(scheme="", netloc="").geturl()
+        await asyncio.to_thread(_run_call, media_path, 5, call["id"], operator.headers)
+        for _ in range(50):
+            detail = (await client.get(f"{API}/calls/{call['id']}", headers=operator.headers)).json()
+            if detail["extraction"]:
+                break
+            await asyncio.sleep(0.1)
+    finally:
+        app.dependency_overrides.pop(engine_dep, None)
+
+    extracted = detail["extraction"]
+    assert extracted["status"] == "needs_review" and extracted["validated"] is None
+    assert any("late-ish" in e for e in extracted["validation_errors"])
+    assert "the call ended before every question was asked" in extracted["validation_errors"]
+    assert detail["answers"]["complete"] is False and detail["answers"]["pending"] == "on_time"

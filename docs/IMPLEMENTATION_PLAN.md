@@ -76,7 +76,7 @@ These points drive Decisions D1 to D3 below.
 
 | # | Decision |
 |---|---|
-| D1 | Speech-to-speech with Gemini Live native audio. The cascaded engine is not planned; the `VoiceEngine` interface is kept so it can be added later if Phase 3 shows a need. |
+| D1 | Speech-to-speech with Gemini Live native audio. The cascaded engine is not planned; the `VoiceEngine` interface is kept so it can be added later if Phase 3 shows a need. **Extended 11 November 2026 (hybrid AI stack):** Gemini Live stays the voice; a LangGraph scenario graph runs the order of questions and checks each answer during the call (`record_answer` tool), and a LangChain chain over a Gemini text model extracts the structured result after the call. Calls run one at a time on one channel (`CALL_CHANNELS=1`) through an in-app campaign dialer; Celery workers remain the plan when more channels are added. |
 | D2 | FreJun Teler is the first and only telephony provider for now. Exotel is not planned; the `TelephonyProvider` interface is kept. |
 | D3 | The platform is independent of PO Agent and has its own separate database. No data is shared between them. |
 | D4 | PostgreSQL in this platform's own container (`bullcall-postgres-1`), separate from the host PostgreSQL and from PO Agent. |

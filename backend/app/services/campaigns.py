@@ -14,6 +14,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.context import RequestContext
 from app.core.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.models.campaigns import Campaign, CampaignApproval, CampaignContact
@@ -62,9 +63,13 @@ def _require_draft(campaign: Campaign) -> None:
 
 async def _out(session: AsyncSession, campaign: Campaign) -> CampaignOut:
     out = CampaignOut.model_validate(campaign)
-    out.contact_count = (
-        await session.scalar(select(func.count()).where(CampaignContact.campaign_id == campaign.id)) or 0
+    rows = await session.execute(
+        select(CampaignContact.status, func.count())
+        .where(CampaignContact.campaign_id == campaign.id)
+        .group_by(CampaignContact.status)
     )
+    out.progress = {str(status): count for status, count in rows.all()}
+    out.contact_count = sum(out.progress.values())
     return out
 
 
@@ -441,3 +446,38 @@ async def list_approvals(session: AsyncSession, actor: User, campaign_id: uuid.U
         .order_by(CampaignApproval.requested_at.desc())
     )
     return list(rows)
+
+
+# ---- running (the dialer places the calls; see app/services/dialer.py) ----
+
+_RUN_MOVES = {
+    "start": ({CampaignStatus.APPROVED}, CampaignStatus.RUNNING),
+    "pause": ({CampaignStatus.RUNNING}, CampaignStatus.PAUSED),
+    "resume": ({CampaignStatus.PAUSED}, CampaignStatus.RUNNING),
+}
+
+
+async def set_running(
+    session: AsyncSession, actor: User, campaign_id: uuid.UUID, action: str, ctx: RequestContext
+) -> CampaignOut:
+    """start: approved -> running; pause: running -> paused (the call in progress finishes); resume."""
+    allowed, target = _RUN_MOVES[action]
+    campaign = await _get(session, actor, campaign_id, for_update=True)
+    if campaign.status not in allowed:
+        raise Conflict(f"A {campaign.status} campaign cannot be {'resum' if action == 'resume' else action}ed")
+    if target == CampaignStatus.RUNNING and get_settings().telephony_mode == "disabled":
+        raise Conflict("Calling is switched off on this server (TELEPHONY_MODE=disabled)")
+    previous = campaign.status
+    campaign.status = target
+    audit.record(
+        session,
+        ctx,
+        f"campaign.{action}",
+        actor=actor,
+        entity_type="campaign",
+        entity_id=campaign.id,
+        department_id=campaign.department_id,
+        changes={"from": previous, "to": target},
+    )
+    await session.commit()
+    return await _out(session, campaign)

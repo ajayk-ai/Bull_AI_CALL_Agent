@@ -4,7 +4,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.enums import CallStatus
+from app.models.enums import CallStatus, ExtractionStatus
 from app.schemas.common import LanguageCode, Name, ORMModel
 from app.schemas.contacts import PhoneInput
 
@@ -68,10 +68,26 @@ class RecordingOut(ORMModel):
     created_at: datetime
 
 
+class ExtractionOut(ORMModel):
+    """The structured result of a call, extracted after it ended (LangChain + Gemini)."""
+
+    id: uuid.UUID
+    model: str
+    status: ExtractionStatus
+    validated: dict | None
+    raw: dict
+    validation_errors: list
+    confidence: float | None
+    summary: str | None
+    created_at: datetime
+
+
 class CallDetail(CallOut):
     ai_config: dict
     context: dict
     metrics: dict
+    answers: dict | None = None
+    extraction: ExtractionOut | None = None
     transcript: list[dict] = []
     events: list[CallEventOut] = []
     recordings: list[RecordingOut] = []

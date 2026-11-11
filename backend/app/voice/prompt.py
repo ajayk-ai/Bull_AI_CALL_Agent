@@ -6,6 +6,8 @@ Nothing here is campaign-specific: questions, rules, languages and fields all co
 import re
 from typing import Any
 
+from app.voice.scenario import RECORD_ANSWER_TOOL
+
 LANGUAGE_NAMES = {
     "ta-IN": "Tamil",
     "en-IN": "English (India)",
@@ -35,7 +37,8 @@ END_CALL_TOOL = {
         "required": ["outcome"],
     },
 }
-TOOLS = [END_CALL_TOOL]
+# record_answer feeds the scenario graph (app/voice/scenario.py), which decides what to ask next.
+TOOLS = [END_CALL_TOOL, RECORD_ANSWER_TOOL]
 
 GREETING_TRIGGER = "The call has just been answered. Start now with your introduction."
 SILENCE_NUDGE = "The caller has been silent for a while. Check politely whether they can still hear you."
@@ -118,7 +121,9 @@ def build_instructions(
 
     steps = [
         f'Open with: "{render(agent["introduction"])}"',
-        "Ask these questions in order. Skip a question whose condition is not met.",
+        "Ask these questions in order. Skip a question whose condition is not met. As soon as the person "
+        "answers, call record_answer with the question's id (and the line number for per-line questions). Its "
+        "result says whether the answer was accepted and what to ask next: follow it.",
     ]
     sub: dict[int, list[str]] = {1: [_question_line(q, render) for q in config["questions"]]}
     if config.get("business_rules"):

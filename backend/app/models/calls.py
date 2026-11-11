@@ -62,6 +62,8 @@ class Call(UUIDPk, Timestamps, Base):
     context: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
     # Latency, interruptions, audio seconds, turns.
     metrics: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
+    # Answers recorded during the call through the scenario graph (app/voice/scenario.py), per line.
+    answers: Mapped[dict | None] = mapped_column(JSONB)
     language_detected: Mapped[str | None] = mapped_column(String(16))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

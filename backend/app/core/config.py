@@ -55,6 +55,16 @@ class Settings(BaseSettings):
 
     # Platform-wide cap on simultaneous calls; a campaign's own limit cannot exceed it.
     max_concurrent_calls: int = 5
+    # Simultaneous calls the telephony line can carry. With one channel, calls go out one at a time: the
+    # campaign dialer waits for each call to end before placing the next, and individual calls wait too.
+    call_channels: int = Field(1, ge=1)
+    # The campaign dialer runs inside the app when calling is on. How often it looks for the next contact.
+    dialer_enabled: bool = True
+    dialer_interval_seconds: float = Field(5.0, gt=0)
+
+    @property
+    def call_limit(self) -> int:
+        return min(self.max_concurrent_calls, self.call_channels)
 
     # Languages campaigns and contacts may use (BCP-47), and the names accepted for them in uploaded files.
     supported_languages: list[str] = ["ta-IN", "en-IN", "hi-IN"]
@@ -83,6 +93,10 @@ class Settings(BaseSettings):
     gemini_live_model: str = "gemini-3.8-live"
     # How long the caller must be silent before the agent answers (Gemini voice activity detection).
     gemini_silence_ms: int = 300
+    # Text model for the structured result extracted after each call (LangChain). An alias that follows
+    # Google's current Flash model; pin a dated model name here for reproducible results.
+    gemini_text_model: str = "gemini-flash-latest"
+    extraction_timeout_seconds: int = 60
     # Hard stop for any call, whatever the script says, so a stuck call cannot run up charges.
     max_call_seconds_hard: int = 15 * 60
     # Individual calls placed from the app must fall inside these hours (campaigns have their own window).

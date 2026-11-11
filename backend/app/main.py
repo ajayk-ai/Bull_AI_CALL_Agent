@@ -5,6 +5,7 @@ Behind the shared nginx on ai.bullmachine.in the whole app lives under BASE_PATH
 the costing and voicecall apps do; nginx passes the full path through.
 """
 
+import asyncio
 import logging
 import time
 import uuid
@@ -23,7 +24,10 @@ from app.core.logging import configure_logging, request_id_var
 from app.core.paths import route_path
 from app.core.redis import get_redis
 from app.db.session import get_engine
+from app.providers.telephony import get_telephony
+from app.services import dialer
 from app.voice import routes as voice_routes
+from app.voice.engine import get_voice_engine
 
 log = logging.getLogger("app.request")
 
@@ -36,7 +40,15 @@ _SECURITY_HEADERS = {
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    settings = get_settings()
+    stop = asyncio.Event()
+    dialer_task = None
+    if settings.dialer_enabled and settings.telephony_mode != "disabled":
+        dialer_task = asyncio.create_task(dialer.run_forever(get_telephony, get_voice_engine, stop))
     yield
+    stop.set()
+    if dialer_task:
+        await dialer_task
     await voice_routes.pending_post_call_work()
     await get_redis().aclose()
     await get_engine().dispose()
