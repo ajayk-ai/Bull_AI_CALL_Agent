@@ -193,8 +193,11 @@ contacts are skipped. Campaign page: **Start calling**, **Pause** (the call in p
 ### Running a scenario call
 
 1. Put the FreJun and Gemini values in `.env`: `TELER_API_KEY`, `FREJUN_PHONE_NUMBER`, `GEMINI_API_KEY`.
-2. Set `PUBLIC_URL=https://ai.bullmachine.in/aicall` (it must end with `BASE_PATH`; the app checks this).
-   FreJun reaches the app through the shared nginx, as it does for `/voicecall/`.
+2. Start the Cloudflare tunnel: `deploy/tunnel.sh`. It opens a quick tunnel to the app's host port, writes
+   `PUBLIC_URL=https://<random>.trycloudflare.com/aicall` into `.env`, restarts the app and checks the address
+   answers. FreJun's webhooks and audio stream use this address; people keep using ai.bullmachine.in/aicall/.
+   A quick tunnel's address changes whenever it restarts (e.g. after a server reboot): run `deploy/tunnel.sh`
+   again. `deploy/tunnel.sh stop` closes it. A named Cloudflare tunnel would keep a fixed address.
 3. Set `TELEPHONY_MODE=live` and restart: `docker compose -f deploy/docker-compose.yml --env-file .env up -d`.
    The app refuses to start if anything required for live calls is missing.
 4. Load the scenario (the SCM delivery confirmation script) and approve it in the app (a second person, or an
