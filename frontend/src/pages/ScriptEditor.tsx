@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
 import { DepartmentPicker, departmentPayload } from "../components/DepartmentPicker";
-import { Button, Card, ErrorBox, Field, Input, LANGUAGE_NAMES, Loading, Notice, PageHeader, Select, StatusBadge, TextArea } from "../components/ui";
+import { Button, ErrorBox, Field, Input, LANGUAGE_NAMES, Loading, Notice, PageHeader, Select, StatusBadge, Step, StepOutline, TextArea, type OutlineStep } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAction, useApi } from "../lib/hooks";
@@ -377,6 +377,21 @@ export function ScriptEditorPage() {
   const minutes = Math.round(config.limits.max_call_seconds / 60);
   const limit = (key: keyof ScriptConfig["limits"], value: number) => update({ limits: { ...config.limits, [key]: value } });
 
+  // Live progress for the outline: a step is done when none of the save checks point at it.
+  const live = problems(config, versionId ? null : meta.name);
+  const clear = (n: number) => !live.some((p) => p.includes(`step ${n})`));
+  const outline: OutlineStep[] = [
+    ...(!versionId ? [{ n: 1, title: "Basics", done: clear(1) && (me?.role !== "admin" || !!department) }] : []),
+    { n: 2, title: "Who is calling and why", done: clear(2) },
+    { n: 3, title: "Language and voice", done: clear(3) },
+    { n: 4, title: "Upload fields", optional: true, done: clear(4) && config.context_fields.length > 0 },
+    { n: 5, title: "Questions to ask", done: clear(5) },
+    { n: 6, title: "Rules and ending", done: clear(6) },
+    { n: 7, title: "Hand-over", optional: true, done: config.escalation.triggers.some((t) => t.trim()) },
+    { n: 8, title: "What gets saved", optional: true, done: true },
+  ];
+  const doneOf = (n: number) => outline.find((o) => o.n === n)?.done;
+
   return (
     <>
       <PageHeader
@@ -419,301 +434,291 @@ export function ScriptEditorPage() {
           <Notice tone="blue">Waiting for approval by someone other than the author (a colleague in the department, or an admin).</Notice>
         ))}
 
-      <fieldset disabled={!editable} className="space-y-4">
-        {!versionId && (
-          <Step n={1} title="Basics" help="How this script appears in the list. The person on the call never sees this.">
-            <div className="grid gap-3 md:grid-cols-2">
-              <DepartmentPicker value={department} onChange={setDepartment} />
-              <Field label="Script name">
-                <Input value={meta.name} onChange={(e) => setMeta({ ...meta, name: e.target.value })} placeholder="e.g. Supplier delivery check" required />
-              </Field>
-              <Field label="Short description (optional)" className="md:col-span-2">
-                <Input value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} placeholder="e.g. Confirms delivery dates for open purchase orders" />
-              </Field>
-            </div>
-          </Step>
-        )}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_13rem] lg:gap-8">
+        <div className="min-w-0">
+          <fieldset disabled={!editable} className="space-y-5">
+            {!versionId && (
+              <Step n={1} done={doneOf(1)} title="Basics" help="How this script appears in the list. The person on the call never sees this.">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <DepartmentPicker value={department} onChange={setDepartment} />
+                  <Field label="Script name">
+                    <Input value={meta.name} onChange={(e) => setMeta({ ...meta, name: e.target.value })} placeholder="e.g. Supplier delivery check" required />
+                  </Field>
+                  <Field label="Short description (optional)" className="md:col-span-2">
+                    <Input value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} placeholder="e.g. Confirms delivery dates for open purchase orders" />
+                  </Field>
+                </div>
+              </Step>
+            )}
 
-        <Step n={2} title="Who is calling and why">
-          <div className="grid gap-3">
-            <Field label="Purpose of the call" hint="One or two sentences. The assistant uses this to stay on track.">
-              <TextArea
-                value={config.objective}
-                onChange={(e) => update({ objective: e.target.value })}
-                placeholder="e.g. Check whether each open purchase order will be delivered on time. If it is late, find out why and the new date."
-              />
-            </Field>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Assistant's name" hint="How the assistant introduces itself.">
-                <Input value={config.agent.name} onChange={(e) => update({ agent: { ...config.agent, name: e.target.value } })} />
-              </Field>
-              <Field label="Calling on behalf of">
-                <Input value={config.agent.organisation} onChange={(e) => update({ agent: { ...config.agent, organisation: e.target.value } })} />
-              </Field>
-            </div>
-            <div>
-              <Field label="Opening line" hint="The first thing the assistant says. Words in { } are filled in for each person, e.g. {contact.name} becomes their name.">
-                <TextArea
-                  value={config.agent.introduction}
-                  onChange={(e) => update({ agent: { ...config.agent, introduction: e.target.value } })}
-                  placeholder="e.g. Hello, this is the Bull Machines calling assistant. Am I speaking with {contact.name} from {contact.company}?"
-                />
-              </Field>
-              {editable && <InsertChips fields={config.context_fields} onInsert={(t) => update({ agent: { ...config.agent, introduction: append(config.agent.introduction, t) } })} />}
-            </div>
-            <Field label="How the assistant should behave" hint="Tone and manners. The default works for most calls.">
-              <TextArea rows={4} value={config.system_instructions} onChange={(e) => update({ system_instructions: e.target.value })} />
-            </Field>
-          </div>
-        </Step>
-
-        <Step n={3} title="Language and voice">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Languages it can speak">
-              <div className="flex flex-wrap gap-3 py-1.5">
-                {LANGUAGES.map((code) => (
-                  <label key={code} className="flex items-center gap-1 text-sm">
-                    <input type="checkbox" checked={config.languages.allowed.includes(code)} onChange={(e) => setLanguage(code, e.target.checked)} />
-                    {LANGUAGE_NAMES[code]}
-                  </label>
-                ))}
-              </div>
-            </Field>
-            <Field label="First language of the call">
-              <Select value={config.languages.default} onChange={(e) => update({ languages: { ...config.languages, default: e.target.value } })}>
-                {config.languages.allowed.map((code) => (
-                  <option key={code} value={code}>
-                    {LANGUAGE_NAMES[code] ?? code}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Voice">
-              <Select value={config.voice.voice_name} onChange={(e) => update({ voice: { ...config.voice, voice_name: e.target.value } })}>
-                {!voiceKnown && <option value={config.voice.voice_name}>{config.voice.voice_name}</option>}
-                {VOICES.map(([name, style]) => (
-                  <option key={name} value={name}>
-                    {name} ({style})
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-          {config.languages.allowed.length > 1 && (
-            <label className="mt-3 flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={config.languages.auto_detect && config.languages.allow_switching}
-                onChange={(e) => update({ languages: { ...config.languages, auto_detect: e.target.checked, allow_switching: e.target.checked } })}
-              />
-              Switch to the person's language if they speak a different one
-            </label>
-          )}
-        </Step>
-
-        <ContextFieldsEditor fields={config.context_fields} onChange={setContextFields} />
-        <QuestionsEditor questions={config.questions} contextFields={config.context_fields} editable={editable} onChange={(questions) => update({ questions })} />
-
-        <Step n={6} title="Rules and ending the call">
-          <div className="grid gap-3">
-            <Field label="Rules the assistant must follow (optional)" hint="One rule per line.">
-              <TextArea
-                rows={4}
-                value={config.business_rules.join("\n")}
-                onChange={(e) => update({ business_rules: e.target.value.split("\n") })}
-                onBlur={(e) => update({ business_rules: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) })}
-                placeholder={"e.g. Do not discuss prices or payments.\nIf the person is busy, ask for a better time to call and end politely."}
-              />
-            </Field>
-            <Field label="Closing line" hint="The last thing the assistant says.">
-              <TextArea rows={2} value={config.closing.statement} onChange={(e) => update({ closing: { ...config.closing, statement: e.target.value } })} />
-            </Field>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={config.closing.confirm_before_close} onChange={(e) => update({ closing: { ...config.closing, confirm_before_close: e.target.checked } })} />
-              Repeat the answers back to the person before ending, so they can correct mistakes
-            </label>
-          </div>
-        </Step>
-
-        <Step n={7} title="Handing over to a person (optional)" help="Situations where the assistant should stop and promise that someone from the team will call back.">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="When" hint="One situation per line.">
-              <TextArea
-                rows={4}
-                value={config.escalation.triggers.join("\n")}
-                onChange={(e) => update({ escalation: { ...config.escalation, triggers: e.target.value.split("\n") } })}
-                onBlur={(e) => update({ escalation: { ...config.escalation, triggers: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) } })}
-                placeholder={"e.g. The person asks to speak to someone\nThe person is upset or complaining"}
-              />
-            </Field>
-            <Field label="What the assistant says then">
-              <TextArea
-                rows={4}
-                value={config.escalation.message ?? ""}
-                onChange={(e) => update({ escalation: { ...config.escalation, message: e.target.value || null } })}
-                placeholder="e.g. I will ask a member of our team to call you back."
-              />
-            </Field>
-          </div>
-        </Step>
-
-        <Step n={8} title="What gets saved after each call">
-          {autoResults ? (
-            <>
-              <p className="text-sm text-slate-600">After each call, the answers to your questions are written down automatically, together with a short summary and whether the team needs to follow up. Nothing to set up here.</p>
-              <ul className="mt-2 list-disc pl-5 text-sm text-slate-600">
-                {config.questions.map((q, i) => (
-                  <li key={i}>
-                    Answer to question {i + 1}
-                    {q.prompt ? `: "${q.prompt.length > 70 ? q.prompt.slice(0, 70) + "..." : q.prompt}"` : ""}
-                    {isPerItem(q) && " (for each item)"}
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <Notice tone="blue">This script uses a custom results format, set up by a specialist. You can leave it as it is.</Notice>
-          )}
-          <details className="mt-3 text-sm">
-            <summary className="cursor-pointer text-slate-500">Advanced: custom results format (for technical staff)</summary>
-            <div className="mt-2 space-y-2">
-              {autoResults ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setSchemaText(JSON.stringify(buildSchema(config), null, 2));
-                    setAutoResults(false);
-                    setSaved(false);
-                  }}
-                >
-                  Switch to a custom format
-                </Button>
-              ) : (
-                <>
+            <Step n={2} done={doneOf(2)} title="Who is calling and why" help="The purpose of the call and how the assistant introduces itself.">
+              <div className="grid gap-3">
+                <Field label="Purpose of the call" hint="One or two sentences. The assistant uses this to stay on track.">
                   <TextArea
-                    rows={14}
-                    className="font-mono text-xs"
-                    value={schemaText}
-                    onChange={(e) => {
-                      setSaved(false);
-                      setSchemaText(e.target.value);
-                    }}
+                    value={config.objective}
+                    onChange={(e) => update({ objective: e.target.value })}
+                    placeholder="e.g. Check whether each open purchase order will be delivered on time. If it is late, find out why and the new date."
                   />
-                  <p className="text-xs text-slate-500">A JSON Schema describing an object.</p>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      if (window.confirm("Replace the custom format with one built automatically from the questions?")) {
-                        setAutoResults(true);
+                </Field>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Assistant's name" hint="How the assistant introduces itself.">
+                    <Input value={config.agent.name} onChange={(e) => update({ agent: { ...config.agent, name: e.target.value } })} />
+                  </Field>
+                  <Field label="Calling on behalf of">
+                    <Input value={config.agent.organisation} onChange={(e) => update({ agent: { ...config.agent, organisation: e.target.value } })} />
+                  </Field>
+                </div>
+                <div>
+                  <Field label="Opening line" hint="The first thing the assistant says. Words in { } are filled in for each person, e.g. {contact.name} becomes their name.">
+                    <TextArea
+                      value={config.agent.introduction}
+                      onChange={(e) => update({ agent: { ...config.agent, introduction: e.target.value } })}
+                      placeholder="e.g. Hello, this is the Bull Machines calling assistant. Am I speaking with {contact.name} from {contact.company}?"
+                    />
+                  </Field>
+                  {editable && <InsertChips fields={config.context_fields} onInsert={(t) => update({ agent: { ...config.agent, introduction: append(config.agent.introduction, t) } })} />}
+                </div>
+                <Field label="How the assistant should behave" hint="Tone and manners. The default works for most calls.">
+                  <TextArea rows={4} value={config.system_instructions} onChange={(e) => update({ system_instructions: e.target.value })} />
+                </Field>
+              </div>
+            </Step>
+
+            <Step n={3} done={doneOf(3)} title="Language and voice">
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="Languages it can speak">
+                  <div className="flex flex-wrap gap-3 py-1.5">
+                    {LANGUAGES.map((code) => (
+                      <label key={code} className="flex items-center gap-1 text-sm">
+                        <input type="checkbox" checked={config.languages.allowed.includes(code)} onChange={(e) => setLanguage(code, e.target.checked)} />
+                        {LANGUAGE_NAMES[code]}
+                      </label>
+                    ))}
+                  </div>
+                </Field>
+                <Field label="First language of the call">
+                  <Select value={config.languages.default} onChange={(e) => update({ languages: { ...config.languages, default: e.target.value } })}>
+                    {config.languages.allowed.map((code) => (
+                      <option key={code} value={code}>
+                        {LANGUAGE_NAMES[code] ?? code}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Voice">
+                  <Select value={config.voice.voice_name} onChange={(e) => update({ voice: { ...config.voice, voice_name: e.target.value } })}>
+                    {!voiceKnown && <option value={config.voice.voice_name}>{config.voice.voice_name}</option>}
+                    {VOICES.map(([name, style]) => (
+                      <option key={name} value={name}>
+                        {name} ({style})
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+              {config.languages.allowed.length > 1 && (
+                <label className="mt-3 flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={config.languages.auto_detect && config.languages.allow_switching}
+                    onChange={(e) => update({ languages: { ...config.languages, auto_detect: e.target.checked, allow_switching: e.target.checked } })}
+                  />
+                  Switch to the person's language if they speak a different one
+                </label>
+              )}
+            </Step>
+
+            <ContextFieldsEditor done={doneOf(4)} fields={config.context_fields} onChange={setContextFields} />
+            <QuestionsEditor done={doneOf(5)} questions={config.questions} contextFields={config.context_fields} editable={editable} onChange={(questions) => update({ questions })} />
+
+            <Step n={6} done={doneOf(6)} title="Rules and ending the call">
+              <div className="grid gap-3">
+                <Field label="Rules the assistant must follow (optional)" hint="One rule per line.">
+                  <TextArea
+                    rows={4}
+                    value={config.business_rules.join("\n")}
+                    onChange={(e) => update({ business_rules: e.target.value.split("\n") })}
+                    onBlur={(e) => update({ business_rules: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) })}
+                    placeholder={"e.g. Do not discuss prices or payments.\nIf the person is busy, ask for a better time to call and end politely."}
+                  />
+                </Field>
+                <Field label="Closing line" hint="The last thing the assistant says.">
+                  <TextArea rows={2} value={config.closing.statement} onChange={(e) => update({ closing: { ...config.closing, statement: e.target.value } })} />
+                </Field>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={config.closing.confirm_before_close} onChange={(e) => update({ closing: { ...config.closing, confirm_before_close: e.target.checked } })} />
+                  Repeat the answers back to the person before ending, so they can correct mistakes
+                </label>
+              </div>
+            </Step>
+
+            <Step n={7} done={doneOf(7)} title="Handing over to a person (optional)" help="Situations where the assistant should stop and promise that someone from the team will call back.">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="When" hint="One situation per line.">
+                  <TextArea
+                    rows={4}
+                    value={config.escalation.triggers.join("\n")}
+                    onChange={(e) => update({ escalation: { ...config.escalation, triggers: e.target.value.split("\n") } })}
+                    onBlur={(e) => update({ escalation: { ...config.escalation, triggers: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) } })}
+                    placeholder={"e.g. The person asks to speak to someone\nThe person is upset or complaining"}
+                  />
+                </Field>
+                <Field label="What the assistant says then">
+                  <TextArea
+                    rows={4}
+                    value={config.escalation.message ?? ""}
+                    onChange={(e) => update({ escalation: { ...config.escalation, message: e.target.value || null } })}
+                    placeholder="e.g. I will ask a member of our team to call you back."
+                  />
+                </Field>
+              </div>
+            </Step>
+
+            <Step n={8} done title="What gets saved after each call">
+              {autoResults ? (
+                <>
+                  <p className="text-sm text-slate-600">After each call, the answers to your questions are written down automatically, together with a short summary and whether the team needs to follow up. Nothing to set up here.</p>
+                  <ul className="mt-2 list-disc pl-5 text-sm text-slate-600">
+                    {config.questions.map((q, i) => (
+                      <li key={i}>
+                        Answer to question {i + 1}
+                        {q.prompt ? `: "${q.prompt.length > 70 ? q.prompt.slice(0, 70) + "..." : q.prompt}"` : ""}
+                        {isPerItem(q) && " (for each item)"}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <Notice tone="blue">This script uses a custom results format, set up by a specialist. You can leave it as it is.</Notice>
+              )}
+              <details className="mt-3 text-sm">
+                <summary className="cursor-pointer text-slate-500">Advanced: custom results format (for technical staff)</summary>
+                <div className="mt-2 space-y-2">
+                  {autoResults ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setSchemaText(JSON.stringify(buildSchema(config), null, 2));
+                        setAutoResults(false);
                         setSaved(false);
-                      }
-                    }}
-                  >
-                    Use the automatic format instead
+                      }}
+                    >
+                      Switch to a custom format
+                    </Button>
+                  ) : (
+                    <>
+                      <TextArea
+                        rows={14}
+                        className="font-mono text-xs"
+                        value={schemaText}
+                        onChange={(e) => {
+                          setSaved(false);
+                          setSchemaText(e.target.value);
+                        }}
+                      />
+                      <p className="text-xs text-slate-500">A JSON Schema describing an object.</p>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          if (window.confirm("Replace the custom format with one built automatically from the questions?")) {
+                            setAutoResults(true);
+                            setSaved(false);
+                          }
+                        }}
+                      >
+                        Use the automatic format instead
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </details>
+            </Step>
+
+            <details className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+              <summary className="cursor-pointer text-[15px] font-semibold text-slate-900">Call limits (optional, the defaults are fine for most calls)</summary>
+              <div className="mt-3 grid gap-3 md:grid-cols-4">
+                <Field label="Longest call" hint="The call ends after this.">
+                  <Select value={minutes} onChange={(e) => limit("max_call_seconds", Number(e.target.value) * 60)}>
+                    {[...new Set([...CALL_MINUTES, minutes])]
+                      .sort((a, b) => a - b)
+                      .map((m) => (
+                        <option key={m} value={m}>
+                          {m} minute{m === 1 ? "" : "s"}
+                        </option>
+                      ))}
+                  </Select>
+                </Field>
+                <Field label="Wait for a reply (seconds)" hint="Before the assistant speaks again.">
+                  <Input type="number" min={2} max={60} value={config.limits.silence_timeout_seconds} onChange={(e) => limit("silence_timeout_seconds", Number(e.target.value))} />
+                </Field>
+                <Field label="Reminders if silent" hint="Then the assistant hangs up.">
+                  <Input type="number" min={0} max={5} value={config.limits.max_silence_prompts} onChange={(e) => limit("max_silence_prompts", Number(e.target.value))} />
+                </Field>
+                <Field label="Most replies per call" hint="Stops calls that go round in circles.">
+                  <Input type="number" min={4} max={200} value={config.limits.max_turns} onChange={(e) => limit("max_turns", Number(e.target.value))} />
+                </Field>
+              </div>
+            </details>
+          </fieldset>
+
+          <div className="sticky bottom-4 z-10 mt-5 rounded-xl border border-slate-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur">
+            <div className="flex flex-wrap items-center gap-2">
+              {editable && (
+                <>
+                  <Button onClick={save} disabled={action.busy}>
+                    {versionId ? "Save draft" : "Create script"}
+                  </Button>
+                  {versionId &&
+                    (selfApprove ? (
+                      <Button variant="secondary" onClick={publish} disabled={action.busy}>
+                        Save and publish
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" onClick={() => transition("submit")} disabled={action.busy}>
+                        Save and send for approval
+                      </Button>
+                    ))}
+                  <span className="text-xs text-slate-500">
+                    {!versionId
+                      ? "Saved as a draft first. You can change it before publishing."
+                      : selfApprove
+                        ? "Publishing makes the script available to campaigns. After that it cannot be changed, only copied to a new version."
+                        : "A colleague must approve the script before a campaign can use it."}
+                  </span>
+                </>
+              )}
+              {status === "pending_approval" && can("scripts:approve") && (
+                <>
+                  {!selfApprove && (
+                    <Field label="Comments" className="min-w-64 flex-1">
+                      <Input value={comments} onChange={(e) => setComments(e.target.value)} />
+                    </Field>
+                  )}
+                  <Button onClick={() => transition("approve")} disabled={action.busy}>
+                    {selfApprove ? "Publish" : "Approve and publish"}
+                  </Button>
+                  <Button variant="danger" onClick={() => transition("reject")} disabled={action.busy}>
+                    Send back
                   </Button>
                 </>
               )}
-            </div>
-          </details>
-        </Step>
-
-        <details className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-800">Call limits (optional, the defaults are fine for most calls)</summary>
-          <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <Field label="Longest call" hint="The call ends after this.">
-              <Select value={minutes} onChange={(e) => limit("max_call_seconds", Number(e.target.value) * 60)}>
-                {[...new Set([...CALL_MINUTES, minutes])]
-                  .sort((a, b) => a - b)
-                  .map((m) => (
-                    <option key={m} value={m}>
-                      {m} minute{m === 1 ? "" : "s"}
-                    </option>
-                  ))}
-              </Select>
-            </Field>
-            <Field label="Wait for a reply (seconds)" hint="Before the assistant speaks again.">
-              <Input type="number" min={2} max={60} value={config.limits.silence_timeout_seconds} onChange={(e) => limit("silence_timeout_seconds", Number(e.target.value))} />
-            </Field>
-            <Field label="Reminders if silent" hint="Then the assistant hangs up.">
-              <Input type="number" min={0} max={5} value={config.limits.max_silence_prompts} onChange={(e) => limit("max_silence_prompts", Number(e.target.value))} />
-            </Field>
-            <Field label="Most replies per call" hint="Stops calls that go round in circles.">
-              <Input type="number" min={4} max={200} value={config.limits.max_turns} onChange={(e) => limit("max_turns", Number(e.target.value))} />
-            </Field>
-          </div>
-        </details>
-      </fieldset>
-
-      <div className="sticky bottom-0 z-10 mt-4 rounded-lg border border-slate-200 bg-white/95 px-4 py-3 shadow-md backdrop-blur">
-        <div className="flex flex-wrap items-end gap-2">
-          {editable && (
-            <>
-              <Button onClick={save} disabled={action.busy}>
-                {versionId ? "Save draft" : "Create script"}
-              </Button>
-              {versionId &&
-                (selfApprove ? (
-                  <Button variant="secondary" onClick={publish} disabled={action.busy}>
-                    Save and publish
-                  </Button>
-                ) : (
-                  <Button variant="secondary" onClick={() => transition("submit")} disabled={action.busy}>
-                    Save and send for approval
-                  </Button>
-                ))}
-              <span className="text-xs text-slate-500">
-                {!versionId
-                  ? "Saved as a draft first. You can change it before publishing."
-                  : selfApprove
-                    ? "Publishing makes the script available to campaigns. After that it cannot be changed, only copied to a new version."
-                    : "A colleague must approve the script before a campaign can use it."}
-              </span>
-            </>
-          )}
-          {status === "pending_approval" && can("scripts:approve") && (
-            <>
-              {!selfApprove && (
-                <Field label="Comments" className="min-w-64 flex-1">
-                  <Input value={comments} onChange={(e) => setComments(e.target.value)} />
-                </Field>
+              {(status === "published" || status === "retired") && can("scripts:write") && (
+                <Button variant="secondary" onClick={newVersion} disabled={action.busy}>
+                  Create new version from this
+                </Button>
               )}
-              <Button onClick={() => transition("approve")} disabled={action.busy}>
-                {selfApprove ? "Publish" : "Approve and publish"}
-              </Button>
-              <Button variant="danger" onClick={() => transition("reject")} disabled={action.busy}>
-                Send back
-              </Button>
-            </>
-          )}
-          {(status === "published" || status === "retired") && can("scripts:write") && (
-            <Button variant="secondary" onClick={newVersion} disabled={action.busy}>
-              Create new version from this
-            </Button>
-          )}
+            </div>
+          </div>
         </div>
+        <aside className="hidden lg:block">
+          <StepOutline steps={outline} title={versionId ? "Script setup" : "New script"} />
+        </aside>
       </div>
     </>
   );
 }
 
-function Step({ n, title, help, actions, children }: { n: number; title: string; help?: string; actions?: ReactNode; children: ReactNode }) {
-  return (
-    <Card
-      title={
-        <span className="flex items-center gap-2">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs text-white">{n}</span>
-          {title}
-        </span>
-      }
-      actions={actions}
-    >
-      {help && <p className="mb-3 text-sm text-slate-500">{help}</p>}
-      {children}
-    </Card>
-  );
-}
-
-function ContextFieldsEditor({ fields, onChange }: { fields: ContextField[]; onChange: (f: ContextField[]) => void }) {
+function ContextFieldsEditor({ fields, done, onChange }: { fields: ContextField[]; done?: boolean; onChange: (f: ContextField[]) => void }) {
   const set = (i: number, change: Partial<ContextField>) => onChange(fields.map((f, j) => (i === j ? { ...f, ...change } : f)));
   const rename = (i: number, label: string) => {
     const base = slug(label);
@@ -724,6 +729,7 @@ function ContextFieldsEditor({ fields, onChange }: { fields: ContextField[]; onC
   return (
     <Step
       n={4}
+      done={done}
       title="Information from your upload (optional)"
       help="Details that are different for each person and come from the Excel/CSV file you upload for a campaign, e.g. PO number or due date. The assistant can then mention them on the call."
       actions={
@@ -773,9 +779,11 @@ function QuestionsEditor({
   questions,
   contextFields,
   editable,
+  done,
   onChange,
 }: {
   questions: Question[];
+  done?: boolean;
   contextFields: ContextField[];
   editable: boolean;
   onChange: (q: Question[]) => void;
@@ -797,6 +805,7 @@ function QuestionsEditor({
   return (
     <Step
       n={5}
+      done={done}
       title="Questions to ask"
       help="The assistant asks these in order and writes down the answers. Write each question the way you would say it."
       actions={
@@ -810,7 +819,7 @@ function QuestionsEditor({
           const earlier = questions.slice(0, i);
           const parent = earlier.find((p) => p.id === q.condition?.question_id);
           return (
-            <div key={i} className="rounded-md border border-slate-200 p-3">
+            <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-700">Question {i + 1}</span>
                 <span className="flex-1" />

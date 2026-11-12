@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 
-import { Badge, Button, Card, ErrorBox, Field, Input, LANGUAGE_NAMES, Loading, PageHeader, Pager, Select, StatusBadge, Table, Td, formatDate } from "../components/ui";
+import { Badge, Button, Card, ErrorBox, Field, Input, LANGUAGE_NAMES, Loading, NextSteps, PageHeader, Pager, Select, StatusBadge, Table, Td, formatDate } from "../components/ui";
 import { api, query } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAction, useApi } from "../lib/hooks";
@@ -80,6 +80,41 @@ export function CampaignDetailPage() {
         }
       />
       <ErrorBox error={action.error} />
+      {!["completed", "cancelled"].includes(c.status) && (
+        <NextSteps
+          title="Getting this campaign ready"
+          steps={[
+            {
+              title: "Choose a script",
+              done: !!c.script_version_id,
+              text: "Pick what the AI should say and ask, in Settings below. Example: \"Supplier dispatch confirmation\".",
+            },
+            {
+              title: "Add contacts",
+              done: c.contact_count > 0,
+              text: "Upload an Excel or CSV with a name and phone number on each row. The upload page shows an example and a sample file.",
+              action: isDraft && can("imports:write") && (
+                <Link to={`/imports/new?campaign=${c.id}`}>
+                  <Button>Upload contacts</Button>
+                </Link>
+              ),
+            },
+            {
+              title: "Approve",
+              done: !["draft", "pending_approval"].includes(c.status),
+              text:
+                c.status === "pending_approval"
+                  ? "Waiting for a colleague or an admin to approve it, in the Approval box on the right."
+                  : "Check the calling days, hours and contacts, then approve in the Approval box on the right. Nothing is called before this.",
+            },
+            {
+              title: "Start calling",
+              done: ["running", "paused"].includes(c.status),
+              text: "Press Start in the Calling box above. The AI calls everyone during calling hours; answers appear under Calls.",
+            },
+          ]}
+        />
+      )}
       {["approved", "running", "paused", "completed"].includes(c.status) && (
         <Calling campaign={c} canRun={can("campaigns:write")} busy={action.busy} onRun={run} onRefresh={reloadAll} />
       )}

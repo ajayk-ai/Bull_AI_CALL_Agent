@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --color-brand-50: #fffbeb;
   --color-brand-100: #fef3c7;
   --color-brand-500: #f59e0b;
@@ -8,6 +9,33 @@
   --color-brand-700: #b45309;
 }
 
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes slide-in {
+  from { transform: translateX(2rem); opacity: 0; }
+}
+
+@keyframes pop-in {
+  from { transform: scale(0.97); opacity: 0; }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  @apply h-4 w-4 accent-slate-900;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }

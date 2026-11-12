@@ -1,23 +1,76 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { DepartmentPicker } from "../components/DepartmentPicker";
-import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Notice, PageHeader, Select, Table, Td } from "../components/ui";
+import { Badge, Button, ErrorBox, ExampleSheet, Field, Icon, Input, Loading, Notice, PageHeader, Select, Step, Table, Td } from "../components/ui";
 import { api, download } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAction, useApi } from "../lib/hooks";
 import { initialChoices, toMapping, type ColumnChoice, type ColumnRole } from "../lib/mapping";
-import type { Campaign, ImportReport, ImportUpload, ScriptVersion } from "../lib/types";
+import type { Campaign, ContextField, ImportReport, ImportUpload, ScriptVersion } from "../lib/types";
 
 const ROLE_LABELS: Record<ColumnRole, string> = {
-  ignore: "Ignore",
-  name: "Contact name",
+  ignore: "Don't use",
+  name: "Person's name",
   phone: "Phone number",
   company: "Company",
   language: "Language",
-  contact_field: "Contact field",
-  campaign_field: "Campaign field (per row)",
+  contact_field: "Keep on the contact",
+  campaign_field: "Use in this campaign's calls",
 };
+
+const ROLE_HELP: [string, string][] = [
+  ["Person's name / Phone number", "Required. Who to call and how to greet them."],
+  ["Company / Language", "Optional. Language can be e.g. Tamil, English or Hindi; otherwise the script's language is used."],
+  ["Use in this campaign's calls", "Details the AI talks about, e.g. PO number or due date. One per row."],
+  ["Keep on the contact", "Extra details saved with the person for later, e.g. city or GST number."],
+  ["Don't use", "The column is skipped."],
+];
+
+// ---- Example file, built from the script's upload fields ----
+
+const SAMPLE_PEOPLE = [
+  ["Ravi Kumar", "9876543210", "Sri Balaji Steels"],
+  ["Ravi Kumar", "9876543210", "Sri Balaji Steels"],
+  ["Lakshmi N", "9123456780", "KMR Castings"],
+];
+const SAMPLE_SOLO = [
+  ["Ravi Kumar", "9876543210", "Sri Balaji Steels"],
+  ["Lakshmi N", "9123456780", "KMR Castings"],
+  ["Arun Prakash", "+91 98400 12345", "Vel Engineering"],
+];
+
+function sampleValue(f: ContextField, i: number): string {
+  const text = `${f.key} ${f.label}`.toLowerCase();
+  if (f.type === "date") return ["2026-11-20", "2026-11-25", "2026-11-22"][i];
+  if (f.type === "number") return ["120", "45", "300"][i];
+  if (/\bpo\b|purchase/.test(text)) return ["PO-1021", "PO-1034", "PO-1040"][i];
+  if (/item|material|part|product/.test(text)) return ["MS Plate 10mm", "Bearing 6205", "Gear housing"][i];
+  if (/qty|quantity/.test(text)) return ["120", "45", "300"][i];
+  return [`Example ${i + 1}`, `Example ${i + 2}`, `Example ${i + 3}`][i];
+}
+
+function sampleSheet(fields: ContextField[]) {
+  const people = fields.length ? SAMPLE_PEOPLE : SAMPLE_SOLO;
+  return {
+    headers: ["Contact Name", "Mobile", "Company", ...fields.map((f) => f.label)],
+    rows: people.map((p, i) => [...p, ...fields.map((f) => sampleValue(f, i))]),
+  };
+}
+
+function downloadCsv(name: string, headers: string[], rows: string[][]) {
+  const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const text = [headers, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
+  // The byte-order mark makes Excel open the file as UTF-8.
+  const url = URL.createObjectURL(new Blob(["\ufeff" + text], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const fileSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
 export function ImportWizardPage() {
   const [params] = useSearchParams();
@@ -32,29 +85,55 @@ export function ImportWizardPage() {
     <>
       <PageHeader
         title={campaign.data ? `Upload contacts to "${campaign.data.name}"` : "Upload contacts"}
-        subtitle="CSV or Excel (.xlsx). The first non-empty row must hold the column headers."
+        subtitle="Add the people to call from an Excel or CSV file. Four steps: prepare, choose, match, import."
       />
       <ErrorBox error={campaign.error || version.error} />
       {!ready ? (
         <Loading />
       ) : !upload ? (
-        <UploadStep campaign={campaign.data} onUploaded={setUpload} />
+        <UploadStep campaign={campaign.data} contextFields={version.data?.config.context_fields ?? []} onUploaded={setUpload} />
       ) : (
-        <MappingStep upload={upload} campaign={campaign.data} contextFields={version.data?.config.context_fields ?? null} />
+        <div className="space-y-5">
+          <Step n={1} done title="Prepare your file">
+            <p className="text-sm text-slate-600">Done.</p>
+          </Step>
+          <Step
+            n={2}
+            done
+            title="Choose the file"
+            actions={
+              <Button variant="ghost" onClick={() => setUpload(null)}>
+                Choose another file
+              </Button>
+            }
+          >
+            <p className="flex items-center gap-2 text-sm text-slate-700">
+              <Icon name="upload" className="h-4 w-4 text-slate-400" />
+              <span className="font-medium">{upload.file_name}</span>
+              <span className="text-slate-500">· {upload.total_rows} rows</span>
+            </p>
+          </Step>
+          <MappingStep upload={upload} campaign={campaign.data} contextFields={version.data?.config.context_fields ?? null} />
+        </div>
       )}
     </>
   );
 }
 
-function UploadStep({ campaign, onUploaded }: { campaign: Campaign | null; onUploaded: (u: ImportUpload) => void }) {
+function UploadStep({ campaign, contextFields, onUploaded }: { campaign: Campaign | null; contextFields: ContextField[]; onUploaded: (u: ImportUpload) => void }) {
   const { me } = useAuth();
   const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [department, setDepartment] = useState("");
   const { busy, error, run } = useAction();
+  const input = useRef<HTMLInputElement>(null);
+  const sample = sampleSheet(contextFields);
+  const okType = (f: File) => /\.(csv|xlsx|xlsm)$/i.test(f.name);
+  const wrongType = file && !okType(file);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!file) return;
+    if (!file || wrongType) return;
     const form = new FormData();
     form.append("file", file);
     const dept = campaign?.department_id ?? (me?.role === "admin" ? department : "");
@@ -63,18 +142,104 @@ function UploadStep({ campaign, onUploaded }: { campaign: Campaign | null; onUpl
   };
 
   return (
-    <Card title="1. Choose file">
-      <ErrorBox error={error} />
-      <form onSubmit={submit} className="grid items-end gap-3 md:grid-cols-3">
-        {!campaign && <DepartmentPicker value={department} onChange={setDepartment} />}
-        <Field label="File" hint="Up to 10 MB and 10,000 rows">
-          <Input type="file" accept=".csv,.xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
-        </Field>
-        <Button type="submit" disabled={!file || busy}>
-          {busy ? "Reading..." : "Upload"}
-        </Button>
-      </form>
-    </Card>
+    <div className="space-y-5">
+      <Step n={1} title="Prepare your file" help="Any Excel or CSV works. Column names and order are up to you; you will match them in step 3.">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+          <div className="min-w-0">
+            <p className="mb-2 text-sm font-medium text-slate-700">A file that works looks like this:</p>
+            <ExampleSheet
+              headers={sample.headers}
+              rows={sample.rows}
+              highlight={["Contact Name", "Mobile", ...contextFields.filter((f) => f.required).map((f) => f.label)]}
+              caption={
+                contextFields.length > 0 ? (
+                  <>
+                    Columns marked * are needed. Ravi has two rows with the same number, so he gets <b>one call</b> that covers both rows.
+                  </>
+                ) : (
+                  <>Columns marked * are needed. Each row is one person to call.</>
+                )
+              }
+            />
+            <Button variant="secondary" className="mt-3" onClick={() => downloadCsv(campaign ? `${campaign.name} - sample.csv` : "contacts - sample.csv", sample.headers, sample.rows)}>
+              <Icon name="download" />
+              Download this sample
+            </Button>
+          </div>
+          <ul className="space-y-2.5 text-sm text-slate-600">
+            {[
+              <>
+                <b className="text-slate-800">First row = column names</b>, like "Name" and "Mobile".
+              </>,
+              <>
+                <b className="text-slate-800">A name and a phone number</b> on every row.
+              </>,
+              <>
+                Phone numbers like <span className="font-mono text-xs">9876543210</span> or <span className="font-mono text-xs">+91 98765 43210</span>.
+              </>,
+              <>
+                Save as <b className="text-slate-800">.xlsx</b> or <b className="text-slate-800">.csv</b> (not the old .xls).
+              </>,
+              <>Up to 10,000 rows and 10 MB.</>,
+            ].map((item, i) => (
+              <li key={i} className="flex gap-2">
+                <Icon name="check" className="mt-0.5 h-4 w-4 text-emerald-500" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Step>
+
+      <Step n={2} title="Choose the file" help="Nothing is saved yet. You will see the columns and check the rows first.">
+        <ErrorBox error={error} />
+        <form onSubmit={submit} className="space-y-4">
+          {!campaign && <DepartmentPicker value={department} onChange={setDepartment} />}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => input.current?.click()}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && input.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              const dropped = e.dataTransfer.files?.[0];
+              if (dropped) setFile(dropped);
+            }}
+            className={`flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
+              dragging ? "border-brand-500 bg-brand-50" : file ? "border-emerald-300 bg-emerald-50/50" : "border-slate-300 hover:border-slate-400 hover:bg-slate-50"
+            }`}
+          >
+            <span className={`flex h-11 w-11 items-center justify-center rounded-full ${file ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>
+              <Icon name={file ? "check" : "upload"} className="h-5 w-5" />
+            </span>
+            {file ? (
+              <>
+                <p className="mt-3 text-sm font-semibold text-slate-900">{file.name}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{fileSize(file.size)} · click to choose a different file</p>
+              </>
+            ) : (
+              <>
+                <p className="mt-3 text-sm font-semibold text-slate-900">Drop your Excel or CSV file here</p>
+                <p className="mt-0.5 text-xs text-slate-500">or click to browse · .xlsx or .csv, up to 10 MB</p>
+              </>
+            )}
+            <input ref={input} type="file" accept=".csv,.xlsx,.xlsm" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </div>
+          {wrongType && <Notice>This file type can't be read. Open it in Excel and use "Save as" → Excel Workbook (.xlsx) or CSV.</Notice>}
+          <div className="flex justify-end">
+            <Button type="submit" disabled={!file || !!wrongType || busy}>
+              {busy ? "Reading the file..." : "Upload and continue"}
+            </Button>
+          </div>
+        </form>
+      </Step>
+    </div>
   );
 }
 
@@ -115,7 +280,23 @@ function MappingStep({ upload, campaign, contextFields }: { upload: ImportUpload
   return (
     <>
       <ErrorBox error={error} />
-      <Card title={`2. Match columns · ${upload.file_name} · ${upload.total_rows} rows`} className="mb-4">
+      <Step
+        n={3}
+        done={problems.length === 0 && missingContext.length === 0}
+        title="Match your columns"
+        help="We guessed what each column is. Check the 'Use as' column and fix anything that looks wrong."
+      >
+        <details className="mb-4 rounded-lg bg-slate-50 px-4 py-3 text-sm ring-1 ring-slate-200">
+          <summary className="cursor-pointer font-medium text-slate-700">What do the options mean?</summary>
+          <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-[14rem_1fr]">
+            {ROLE_HELP.map(([term, text]) => (
+              <div key={term} className="contents">
+                <dt className="font-medium text-slate-800">{term}</dt>
+                <dd className="text-slate-600">{text}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
         {campaign && (
           <Notice tone="blue">
             Rows with the same phone number become one contact in the campaign, with one item per row (for example, one per PO).
@@ -124,7 +305,7 @@ function MappingStep({ upload, campaign, contextFields }: { upload: ImportUpload
             )}
           </Notice>
         )}
-        <Table headers={["Column in file", "Use as", "Field key", "Example values"]}>
+        <Table headers={["Column in your file", "Use as", "Saved as", "First values in your file"]}>
           {upload.headers.map((header) => (
             <tr key={header}>
               <Td className="font-medium">{header}</Td>
@@ -164,9 +345,9 @@ function MappingStep({ upload, campaign, contextFields }: { upload: ImportUpload
             ))}
           </ul>
         )}
-      </Card>
+      </Step>
 
-      <Card title="3. Check and import">
+      <Step n={4} done={!!finished} title="Check and import" help="First press 'Check file': it finds problems without saving anything. Then press 'Import'.">
         <div className="mb-4 grid gap-3 md:grid-cols-2">
           <Field label="If a number already exists in the department">
             <Select value={duplicatePolicy} onChange={(e) => setDuplicatePolicy(e.target.value as "skip" | "update")} disabled={!!finished}>
@@ -189,7 +370,7 @@ function MappingStep({ upload, campaign, contextFields }: { upload: ImportUpload
             <Button onClick={() => process(false)} disabled={busy || problems.length > 0 || !report || report.status !== "uploaded"}>
               Import
             </Button>
-            <span className="self-center text-xs text-slate-500">Check the file first; nothing is saved by a check.</span>
+            <span className="self-center text-xs text-slate-500">{report?.dry_run ? "Looks right? Press Import." : "Nothing is saved by a check."}</span>
           </div>
         )}
         {report && <ReportView report={report} />}
@@ -206,7 +387,7 @@ function MappingStep({ upload, campaign, contextFields }: { upload: ImportUpload
             </Link>
           </div>
         )}
-      </Card>
+      </Step>
     </>
   );
 }
