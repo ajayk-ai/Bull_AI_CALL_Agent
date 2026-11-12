@@ -13,7 +13,8 @@ const PAGE_SIZE = 50;
 
 export function CampaignDetailPage() {
   const { id } = useParams();
-  const { can } = useAuth();
+  const { me, can } = useAuth();
+  const selfApprove = me?.second_approver_required === false && can("campaigns:approve");
   const campaign = useApi<Campaign>(`/campaigns/${id}`);
   const [page, setPage] = useState(1);
   const contacts = useApi<Page<CampaignContact>>(`/campaigns/${id}/contacts${query({ page, page_size: PAGE_SIZE })}`);
@@ -35,6 +36,13 @@ export function CampaignDetailPage() {
   const run = (name: "start" | "pause" | "resume") =>
     action.run(async () => {
       await api.post(`/campaigns/${c.id}/${name}`);
+      reloadAll();
+    });
+
+  const approveNow = () =>
+    action.run(async () => {
+      await api.post(`/campaigns/${c.id}/submit`, {});
+      await api.post(`/campaigns/${c.id}/approve`, { comments: null });
       reloadAll();
     });
 
@@ -125,10 +133,18 @@ export function CampaignDetailPage() {
             <div className="space-y-3">
               {isDraft && can("campaigns:write") && (
                 <>
-                  <p className="text-sm text-slate-600">Submitting checks the script, the contacts and their campaign data.</p>
-                  <Button onClick={() => step("submit")} disabled={action.busy}>
-                    Submit for approval
-                  </Button>
+                  <p className="text-sm text-slate-600">
+                    {selfApprove ? "Checks the script, the contacts and their campaign data, then marks the campaign ready to start." : "Submitting checks the script, the contacts and their campaign data."}
+                  </p>
+                  {selfApprove ? (
+                    <Button onClick={approveNow} disabled={action.busy}>
+                      Approve campaign
+                    </Button>
+                  ) : (
+                    <Button onClick={() => step("submit")} disabled={action.busy}>
+                      Submit for approval
+                    </Button>
+                  )}
                 </>
               )}
               {c.status === "pending_approval" && can("campaigns:approve") && (

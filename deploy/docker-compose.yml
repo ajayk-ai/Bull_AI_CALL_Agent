@@ -2,7 +2,7 @@
 # Run from the repository root:  docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 # --env-file .env is required: it supplies the passwords and BASE_PATH, which the frontend is built with.
 #
-# Only the app is published to the host (port 8083). PostgreSQL and Redis stay on the internal network.
+# Only the app is published to the host (port 8084). PostgreSQL and Redis stay on the internal network.
 # Uploaded files (and call recordings from Phase 3) are kept, encrypted, in the "storage" volume.
 # Celery workers are added in Phase 4.
 
@@ -81,7 +81,7 @@ services:
       # Safe while APP_BIND_ADDRESS is 127.0.0.1 (only processes on this server can connect).
       FORWARDED_ALLOW_IPS: "*"
     ports:
-      - "${APP_BIND_ADDRESS:-127.0.0.1}:8083:8083"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:8084:8083"
     volumes:
       - storage:/srv/var/storage
     depends_on:

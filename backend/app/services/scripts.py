@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.context import RequestContext
 from app.core.errors import Conflict, Forbidden, NotFound
 from app.models.enums import ScriptVersionStatus
@@ -225,7 +226,7 @@ async def approve_version(
     version, script = await _transition(
         session, actor, version_id, ScriptVersionStatus.PENDING_APPROVAL, "script_version.approve", ctx, comments
     )
-    if version.created_by_id == actor.id and not is_admin(actor):
+    if version.created_by_id == actor.id and not is_admin(actor) and get_settings().require_second_approver:
         raise Forbidden("A script version must be approved by someone other than its author")
     now = datetime.now(UTC)
     previous = await session.scalars(

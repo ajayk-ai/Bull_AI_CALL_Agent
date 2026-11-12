@@ -378,7 +378,12 @@ async def decide(
 ) -> CampaignOut:
     campaign = await _get(session, actor, campaign_id, for_update=True)
     approval = await _pending_approval(session, campaign)
-    if approve and approval.requested_by_id == actor.id and not is_admin(actor):
+    if (
+        approve
+        and approval.requested_by_id == actor.id
+        and not is_admin(actor)
+        and get_settings().require_second_approver
+    ):
         raise Forbidden("A campaign must be approved by someone other than the person who submitted it")
     if approve and (problems := await _readiness_problems(session, campaign)):
         raise ValidationFailed("Campaign is no longer ready for approval", details={"problems": problems})

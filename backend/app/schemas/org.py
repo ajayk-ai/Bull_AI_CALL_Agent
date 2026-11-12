@@ -105,3 +105,5 @@ class UserCredentials(BaseModel):
 
 class MeOut(UserOut):
     permissions: list[str]
+    # Whether scripts and campaigns need a second person to approve them.
+    second_approver_required: bool = True

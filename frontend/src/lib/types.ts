@@ -18,6 +18,7 @@ export interface Me {
   department_id: string | null;
   must_change_password: boolean;
   permissions: string[];
+  second_approver_required: boolean;
 }
 
 export interface Department {

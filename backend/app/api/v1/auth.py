@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.deps import ContextDep, CurrentUser, SessionDep
+from app.core.config import get_settings
 from app.core.redis import get_redis
 from app.rbac.permissions import ROLE_PERMISSIONS
 from app.schemas.org import ChangePasswordRequest, LoginRequest, MeOut, RefreshRequest, TokenResponse
@@ -22,8 +23,13 @@ async def refresh(body: RefreshRequest, session: SessionDep) -> TokenResponse:
 @router.get("/me", response_model=MeOut)
 async def me(user: CurrentUser) -> MeOut:
     return MeOut(
-        **{f: getattr(user, f) for f in MeOut.model_fields if f not in ("permissions", "locked")},
+        **{
+            f: getattr(user, f)
+            for f in MeOut.model_fields
+            if f not in ("permissions", "locked", "second_approver_required")
+        },
         permissions=sorted(ROLE_PERMISSIONS[user.role]),
+        second_approver_required=get_settings().require_second_approver,
     )
 
 

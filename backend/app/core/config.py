@@ -79,6 +79,10 @@ class Settings(BaseSettings):
         "bengali": "bn-IN",
     }
 
+    # true: a script or campaign must be approved by someone other than its author (admins excepted).
+    # false: the author can approve (publish) their own work in one step.
+    require_second_approver: bool = True
+
     # ---- Calling ----
     # disabled: no calls can be placed. mock: simulated telephony, for development and tests only; every call is
     # stored as simulated. live: real calls through FreJun (Teler).

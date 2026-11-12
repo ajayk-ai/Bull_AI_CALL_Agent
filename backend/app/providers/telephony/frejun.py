@@ -91,6 +91,20 @@ def mapped_status(payload: dict) -> str | None:
     return STATUS_MAP.get(raw.lower()) if raw else None
 
 
+def e164(number: str) -> str:
+    """FreJun wants +<country code><number>. A bare 10-digit number is taken as Indian (+91)."""
+    digits = "".join(c for c in number if c.isdigit())
+    if number.strip().startswith("+"):
+        return f"+{digits}"
+    if len(digits) == 10:
+        return f"+91{digits}"
+    if len(digits) == 12 and digits.startswith("91"):
+        return f"+{digits}"
+    if len(digits) == 11 and digits.startswith("0"):
+        return f"+91{digits[1:]}"
+    return number.strip()
+
+
 class FreJunTelephony:
     name = NAME
     simulated = False
@@ -106,7 +120,7 @@ class FreJunTelephony:
         try:
             async with self._client() as client:
                 call = await client.voice.calls.create(
-                    from_number=settings.frejun_phone_number,
+                    from_number=e164(settings.frejun_phone_number or ""),
                     to_number=to_e164,
                     flow_url=urls.flow_url,
                     status_callback_url=urls.status_url,
@@ -115,8 +129,12 @@ class FreJunTelephony:
         except TelephonyError:
             raise
         except Exception as exc:
-            log.exception("FreJun refused the call")
-            raise TelephonyError(f"FreJun could not place the call: {type(exc).__name__}")
+            details = getattr(exc, "details", None)
+            log.exception("FreJun refused the call: %s %s", getattr(exc, "message", exc), details)
+            reason = getattr(exc, "message", None) or type(exc).__name__
+            if details:
+                reason = f"{reason}: {details}"
+            raise TelephonyError(f"FreJun could not place the call ({reason})"[:500])
         return str(call.id)
 
     async def hangup(self, provider_call_id: str) -> None:

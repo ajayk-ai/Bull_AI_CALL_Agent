@@ -109,6 +109,21 @@ async def test_author_cannot_approve_own_script(client, make_user, scm):
     assert "other than its author" in response.json()["error"]["message"]
 
 
+async def test_author_can_publish_own_script_when_second_approver_not_required(client, make_user, scm, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "require_second_approver", False)
+    author = await make_user(Role.USER, scm)
+    me = (await client.get(f"{API}/auth/me", headers=author.headers)).json()
+    assert me["second_approver_required"] is False
+    script = (await client.post(f"{API}/scripts", headers=author.headers, json=script_body())).json()
+    version_id = script["versions"][0]["id"]
+    await client.post(f"{API}/script-versions/{version_id}/submit", headers=author.headers)
+    response = await client.post(f"{API}/script-versions/{version_id}/approve", headers=author.headers, json={})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "published"
+
+
 async def test_invalid_script_rejected_and_scripts_are_department_scoped(client, team, make_user, scm, quality):
     bad = script_body()
     bad["config"]["closing"]["statement"] = "Thanks {context.unknown_field}"

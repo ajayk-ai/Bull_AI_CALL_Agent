@@ -67,6 +67,7 @@ export function UsersPage() {
       {creating && (
         <AccountForm
           departments={departments.data ?? []}
+          onDepartmentsChanged={departments.reload}
           onCancel={() => setCreating(false)}
           onCreated={(c) => {
             setCreating(false);
@@ -78,6 +79,7 @@ export function UsersPage() {
       {editing && (
         <AccountForm
           departments={departments.data ?? []}
+          onDepartmentsChanged={departments.reload}
           user={editing}
           onCancel={() => setEditing(null)}
           onSaved={() => {
@@ -225,12 +227,14 @@ function CredentialsPanel({ credentials, onClose }: { credentials: UserCredentia
 
 function AccountForm({
   departments,
+  onDepartmentsChanged,
   user,
   onCancel,
   onCreated,
   onSaved,
 }: {
   departments: Department[];
+  onDepartmentsChanged: () => void;
   user?: User;
   onCancel: () => void;
   onCreated?: (c: UserCredentials) => void;
@@ -248,6 +252,18 @@ function AccountForm({
   });
   const { busy, error, run } = useAction();
   const editingSelf = user?.id === me?.id;
+  const [newDept, setNewDept] = useState<{ code: string; name: string } | null>(null);
+  const deptAction = useAction();
+
+  const addDepartment = () => {
+    if (!newDept || !newDept.code.trim() || !newDept.name.trim()) return;
+    deptAction.run(async () => {
+      const created = await api.post<Department>("/departments", { code: newDept.code.trim(), name: newDept.name.trim() });
+      onDepartmentsChanged();
+      setForm((f) => ({ ...f, department_id: created.id }));
+      setNewDept(null);
+    });
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -298,18 +314,55 @@ function AccountForm({
           </Select>
         </Field>
         {form.role !== "admin" && (
-          <Field label="Department">
-            <Select value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })} required disabled={editingSelf}>
-              <option value="">Choose...</option>
-              {departments
-                .filter((d) => d.is_active)
-                .map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.code} · {d.name}
-                  </option>
-                ))}
-            </Select>
-          </Field>
+          <div>
+            <Field
+              label="Department"
+              hint={departments.some((d) => d.is_active) ? undefined : "No departments yet. Add one below."}
+            >
+              <Select value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })} required disabled={editingSelf}>
+                <option value="">Choose...</option>
+                {departments
+                  .filter((d) => d.is_active)
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.code} · {d.name}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+            {!editingSelf &&
+              (newDept ? (
+                <div className="mt-2 rounded border border-slate-200 p-2">
+                  <ErrorBox error={deptAction.error} />
+                  <div className="grid gap-2 md:grid-cols-[1fr_2fr]">
+                    <Input placeholder="Code, e.g. SCM" value={newDept.code} onChange={(e) => setNewDept({ ...newDept, code: e.target.value })} />
+                    <Input
+                      placeholder="Name, e.g. Supply Chain Management"
+                      value={newDept.name}
+                      onChange={(e) => setNewDept({ ...newDept, name: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addDepartment();
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <Button type="button" onClick={addDepartment} disabled={deptAction.busy || !newDept.code.trim() || !newDept.name.trim()}>
+                      Add department
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={() => setNewDept(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button type="button" variant="ghost" className="mt-1" onClick={() => setNewDept({ code: "", name: "" })}>
+                  + New department
+                </Button>
+              ))}
+          </div>
         )}
         {!user && (
           <div className="md:col-span-2">
