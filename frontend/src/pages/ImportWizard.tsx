@@ -2,12 +2,13 @@ import { useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { DepartmentPicker } from "../components/DepartmentPicker";
-import { Badge, Button, ErrorBox, ExampleSheet, Field, Icon, Input, Loading, Notice, PageHeader, Select, Step, Table, Td } from "../components/ui";
+import { Badge, Button, ErrorBox, ExampleSheet, Field, Icon, Input, Loading, Notice, PageHeader, Segmented, Select, Step, Table, Td } from "../components/ui";
 import { api, download } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useExamples, type DeptExample } from "../lib/examples";
 import { useAction, useApi } from "../lib/hooks";
 import { initialChoices, toMapping, type ColumnChoice, type ColumnRole } from "../lib/mapping";
-import type { Campaign, ContextField, ImportReport, ImportUpload, ScriptVersion } from "../lib/types";
+import type { Campaign, Connection, ContextField, ImportReport, ImportUpload, ScriptVersion } from "../lib/types";
 
 const ROLE_LABELS: Record<ColumnRole, string> = {
   ignore: "Don't use",
@@ -29,32 +30,27 @@ const ROLE_HELP: [string, string][] = [
 
 // ---- Example file, built from the script's upload fields ----
 
-const SAMPLE_PEOPLE = [
-  ["Ravi Kumar", "9876543210", "Sri Balaji Steels"],
-  ["Ravi Kumar", "9876543210", "Sri Balaji Steels"],
-  ["Lakshmi N", "9123456780", "KMR Castings"],
-];
-const SAMPLE_SOLO = [
-  ["Ravi Kumar", "9876543210", "Sri Balaji Steels"],
-  ["Lakshmi N", "9123456780", "KMR Castings"],
-  ["Arun Prakash", "+91 98400 12345", "Vel Engineering"],
-];
-
-function sampleValue(f: ContextField, i: number): string {
+function sampleValue(f: ContextField, i: number, ex: DeptExample): string {
+  const known = ex.fields.find((x) => x.label.toLowerCase() === f.label.toLowerCase());
+  if (known) return known.values[i];
   const text = `${f.key} ${f.label}`.toLowerCase();
   if (f.type === "date") return ["2026-11-20", "2026-11-25", "2026-11-22"][i];
   if (f.type === "number") return ["120", "45", "300"][i];
-  if (/\bpo\b|purchase/.test(text)) return ["PO-1021", "PO-1034", "PO-1040"][i];
-  if (/item|material|part|product/.test(text)) return ["MS Plate 10mm", "Bearing 6205", "Gear housing"][i];
-  if (/qty|quantity/.test(text)) return ["120", "45", "300"][i];
+  if (/\bpo\b|purchase/.test(text)) return ["PO-45001", "PO-45034", "PO-45040"][i];
+  if (/serial|machine/.test(text)) return ["BL-2024-0871", "BL-2024-0902", "SSL-2023-0112"][i];
+  if (/item|material|part|product/.test(text)) return ["Hydraulic cylinder", "Boom pin 60mm", "Axle housing"][i];
+  if (/invoice/.test(text)) return ["INV-10231", "INV-10255", "INV-10260"][i];
   return [`Example ${i + 1}`, `Example ${i + 2}`, `Example ${i + 3}`][i];
 }
 
-function sampleSheet(fields: ContextField[]) {
-  const people = fields.length ? SAMPLE_PEOPLE : SAMPLE_SOLO;
+/** A sample sheet in the department's own terms. The script's upload fields win over the department's usual columns. */
+function sampleSheet(fields: ContextField[], ex: DeptExample) {
+  const extra = fields.length ? fields.map((f) => ({ label: f.label, values: [0, 1, 2].map((i) => sampleValue(f, i, ex)) })) : ex.fields;
+  const repeated = ex.people.find((p, i) => ex.people.findIndex((q) => q[1] === p[1]) !== i)?.[0] ?? null;
   return {
-    headers: ["Contact Name", "Mobile", "Company", ...fields.map((f) => f.label)],
-    rows: people.map((p, i) => [...p, ...fields.map((f) => sampleValue(f, i))]),
+    headers: ["Contact Name", "Mobile", "Company", ...extra.map((f) => f.label)],
+    rows: ex.people.map((p, i) => [...p, ...extra.map((f) => f.values[i])]),
+    repeated,
   };
 }
 
@@ -121,13 +117,25 @@ export function ImportWizardPage() {
 }
 
 function UploadStep({ campaign, contextFields, onUploaded }: { campaign: Campaign | null; contextFields: ContextField[]; onUploaded: (u: ImportUpload) => void }) {
-  const { me } = useAuth();
+  const { me, can } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [department, setDepartment] = useState("");
   const { busy, error, run } = useAction();
   const input = useRef<HTMLInputElement>(null);
-  const sample = sampleSheet(contextFields);
+  const deptId = campaign?.department_id ?? (me?.role === "admin" ? department : me?.department_id) ?? null;
+  const ex = useExamples(deptId);
+  const sample = sampleSheet(contextFields, ex);
+  const connections = useApi<Connection[]>(can("integrations:manage") ? "/integrations" : null);
+  const sources = (connections.data ?? []).filter((c) => c.kind === "fetch_contacts" && c.is_active && (!deptId || c.department_id === deptId));
+  const [mode, setMode] = useState<"file" | "app">("file");
+  const [source, setSource] = useState("");
+  const chosenSource = sources.find((c) => c.id === source) ?? sources[0];
+
+  const fetchFromApp = () => {
+    if (!chosenSource) return;
+    run(async () => onUploaded(await api.post<ImportUpload>(`/integrations/${chosenSource.id}/fetch`, { campaign_id: campaign?.id ?? null })));
+  };
   const okType = (f: File) => /\.(csv|xlsx|xlsm)$/i.test(f.name);
   const wrongType = file && !okType(file);
 
@@ -152,12 +160,12 @@ function UploadStep({ campaign, contextFields, onUploaded }: { campaign: Campaig
               rows={sample.rows}
               highlight={["Contact Name", "Mobile", ...contextFields.filter((f) => f.required).map((f) => f.label)]}
               caption={
-                contextFields.length > 0 ? (
+                sample.repeated ? (
                   <>
-                    Columns marked * are needed. Ravi has two rows with the same number, so he gets <b>one call</b> that covers both rows.
+                    Columns marked * are needed. {sample.repeated} has two rows with the same number, so gets <b>one call</b> that covers both rows.
                   </>
                 ) : (
-                  <>Columns marked * are needed. Each row is one person to call.</>
+                  <>Columns marked * are needed. Each row is one person to call; the other columns are optional.</>
                 )
               }
             />
@@ -191,53 +199,106 @@ function UploadStep({ campaign, contextFields, onUploaded }: { campaign: Campaig
         </div>
       </Step>
 
-      <Step n={2} title="Choose the file" help="Nothing is saved yet. You will see the columns and check the rows first.">
+      <Step
+        n={2}
+        title={mode === "file" ? "Choose the file" : "Fetch from your app"}
+        help="Nothing is saved yet. You will see the columns and check the rows first."
+        actions={
+          can("integrations:manage") && (
+            <Segmented
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: "file", label: "Excel or CSV" },
+                { value: "app", label: "Connected app" },
+              ]}
+            />
+          )
+        }
+      >
         <ErrorBox error={error} />
-        <form onSubmit={submit} className="space-y-4">
-          {!campaign && <DepartmentPicker value={department} onChange={setDepartment} />}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => input.current?.click()}
-            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && input.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              const dropped = e.dataTransfer.files?.[0];
-              if (dropped) setFile(dropped);
-            }}
-            className={`flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
-              dragging ? "border-brand-500 bg-brand-50" : file ? "border-emerald-300 bg-emerald-50/50" : "border-slate-300 hover:border-slate-400 hover:bg-slate-50"
-            }`}
-          >
-            <span className={`flex h-11 w-11 items-center justify-center rounded-full ${file ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>
-              <Icon name={file ? "check" : "upload"} className="h-5 w-5" />
-            </span>
-            {file ? (
-              <>
-                <p className="mt-3 text-sm font-semibold text-slate-900">{file.name}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{fileSize(file.size)} · click to choose a different file</p>
-              </>
+        {mode === "app" ? (
+          <div className="space-y-4">
+            {!campaign && <DepartmentPicker value={department} onChange={setDepartment} />}
+            {connections.loading && !connections.data ? (
+              <Loading />
+            ) : sources.length === 0 ? (
+              <div className="flex flex-col items-center rounded-xl border-2 border-dashed border-slate-200 px-6 py-8 text-center">
+                <Icon name="plug" className="h-6 w-6 text-slate-400" />
+                <p className="mt-2 text-sm font-semibold text-slate-900">No app connected yet</p>
+                <p className="mt-1 max-w-md text-sm text-slate-500">
+                  Connect your {ex.system} once, and fetch the {ex.who} to call with one click instead of exporting Excel every time.
+                </p>
+                <Link to="/integrations" className="mt-3">
+                  <Button variant="secondary">Connect an app</Button>
+                </Link>
+              </div>
             ) : (
               <>
-                <p className="mt-3 text-sm font-semibold text-slate-900">Drop your Excel or CSV file here</p>
-                <p className="mt-0.5 text-xs text-slate-500">or click to browse · .xlsx or .csv, up to 10 MB</p>
+                <Field label="Fetch the list from" hint={chosenSource ? `GET ${chosenSource.url}` : undefined}>
+                  <Select value={chosenSource?.id ?? ""} onChange={(e) => setSource(e.target.value)}>
+                    {sources.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <div className="flex justify-end">
+                  <Button onClick={fetchFromApp} disabled={busy || !chosenSource}>
+                    {busy ? "Fetching..." : "Fetch and continue"}
+                  </Button>
+                </div>
               </>
             )}
-            <input ref={input} type="file" accept=".csv,.xlsx,.xlsm" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </div>
-          {wrongType && <Notice>This file type can't be read. Open it in Excel and use "Save as" → Excel Workbook (.xlsx) or CSV.</Notice>}
-          <div className="flex justify-end">
-            <Button type="submit" disabled={!file || !!wrongType || busy}>
-              {busy ? "Reading the file..." : "Upload and continue"}
-            </Button>
-          </div>
-        </form>
+        ) : (
+          <form onSubmit={submit} className="space-y-4">
+            {!campaign && <DepartmentPicker value={department} onChange={setDepartment} />}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => input.current?.click()}
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && input.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                const dropped = e.dataTransfer.files?.[0];
+                if (dropped) setFile(dropped);
+              }}
+              className={`flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
+                dragging ? "border-brand-500 bg-brand-50" : file ? "border-emerald-300 bg-emerald-50/50" : "border-slate-300 hover:border-slate-400 hover:bg-slate-50"
+              }`}
+            >
+              <span className={`flex h-11 w-11 items-center justify-center rounded-full ${file ? "bg-emerald-100 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>
+                <Icon name={file ? "check" : "upload"} className="h-5 w-5" />
+              </span>
+              {file ? (
+                <>
+                  <p className="mt-3 text-sm font-semibold text-slate-900">{file.name}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{fileSize(file.size)} · click to choose a different file</p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-3 text-sm font-semibold text-slate-900">Drop your Excel or CSV file here</p>
+                  <p className="mt-0.5 text-xs text-slate-500">or click to browse · .xlsx or .csv, up to 10 MB</p>
+                </>
+              )}
+              <input ref={input} type="file" accept=".csv,.xlsx,.xlsm" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            </div>
+            {wrongType && <Notice>This file type can't be read. Open it in Excel and use "Save as" → Excel Workbook (.xlsx) or CSV.</Notice>}
+            <div className="flex justify-end">
+              <Button type="submit" disabled={!file || !!wrongType || busy}>
+                {busy ? "Reading the file..." : "Upload and continue"}
+              </Button>
+            </div>
+          </form>
+        )}
       </Step>
     </div>
   );

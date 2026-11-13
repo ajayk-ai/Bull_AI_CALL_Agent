@@ -321,3 +321,65 @@ export interface Extraction {
   summary: string | null;
   created_at: string;
 }
+
+// ---- Connected apps ----
+
+export type ConnectionKind = "fetch_contacts" | "send_results";
+export type ConnectionAuth = "none" | "bearer" | "api_key" | "basic";
+
+export interface ConnectionResult {
+  at: string;
+  ok: boolean;
+  status_code: number | null;
+  message: string;
+}
+
+export interface Connection {
+  id: string;
+  name: string;
+  kind: ConnectionKind;
+  url: string;
+  department_id: string | null;
+  is_active: boolean;
+  auth_type: ConnectionAuth;
+  api_key_header: string;
+  username: string | null;
+  has_secret: boolean;
+  has_signing_secret: boolean;
+  headers: Record<string, string>;
+  records_path: string;
+  query: Record<string, string>;
+  campaign_ids: string[];
+  last_result: ConnectionResult | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectionTest {
+  ok: boolean;
+  status_code: number | null;
+  message: string;
+  records: number | null;
+  columns: string[];
+  preview: Record<string, string>[];
+}
+
+export type ApiKeyAccess = "read" | "write";
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  access: ApiKeyAccess;
+  user_id: string;
+  user_name: string | null;
+  department_id: string | null;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface ApiKeyCreated extends ApiKey {
+  key: string;
+}

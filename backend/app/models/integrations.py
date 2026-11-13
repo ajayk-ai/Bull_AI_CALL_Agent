@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,3 +35,21 @@ class IntegrationConfig(UUIDPk, Timestamps, Base):
     config: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
     secrets_encrypted: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+
+
+class ApiKey(UUIDPk, Timestamps, Base):
+    """A key another system (or an AI assistant over MCP) uses to call this platform. It acts as the user who
+    created it, limited to `access`; only a SHA-256 of the key is stored."""
+
+    __tablename__ = "api_keys"
+
+    name: Mapped[str] = mapped_column(String(100))
+    # Shown in lists so people can tell keys apart, e.g. "bmk_3fa9c1d2".
+    prefix: Mapped[str] = mapped_column(String(16), index=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("departments.id"), index=True)
+    access: Mapped[str] = mapped_column(String(16))  # "read" | "write"
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

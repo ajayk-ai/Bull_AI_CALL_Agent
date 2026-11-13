@@ -98,7 +98,22 @@ async def upload(
     data = await file.read(settings.import_max_bytes + 1)
     if len(data) > settings.import_max_bytes:
         raise ValidationFailed(f"File is larger than {settings.import_max_bytes // (1024 * 1024)} MB")
-    file_name = _safe_file_name(file.filename or "upload")
+    return await store_upload(session, actor, department_id, file.filename or "upload", data, ctx)
+
+
+async def store_upload(
+    session: AsyncSession,
+    actor: User,
+    department_id: uuid.UUID,
+    file_name: str,
+    data: bytes,
+    ctx: RequestContext,
+    source: dict | None = None,
+) -> ImportUploadOut:
+    """Reads, stores and records an upload whose department is already resolved. Also used for data fetched
+    from a connected app (`source` names the connection), so it gets the same mapping and checks as a file."""
+    settings = get_settings()
+    file_name = _safe_file_name(file_name)
     try:
         sheet = read_sheet(file_name, data, settings.import_max_rows)
     except FileError as exc:
@@ -124,7 +139,7 @@ async def upload(
         entity_type="import",
         entity_id=record.id,
         department_id=department_id,
-        changes={"file_name": file_name, "rows": len(sheet.rows)},
+        changes={"file_name": file_name, "rows": len(sheet.rows), **({"source": source} if source else {})},
     )
     await session.commit()
     return ImportUploadOut(

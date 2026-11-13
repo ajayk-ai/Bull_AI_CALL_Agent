@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router";
 import { Badge, Button, Card, ErrorBox, Field, Input, LANGUAGE_NAMES, Loading, NextSteps, PageHeader, Pager, Select, StatusBadge, Table, Td, formatDate } from "../components/ui";
 import { api, query } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useExamples } from "../lib/examples";
 import { useAction, useApi } from "../lib/hooks";
 import type { Approval, Campaign, CampaignContact, Page, Script, ScriptVersion } from "../lib/types";
 import { usePublishedVersions } from "./Campaigns";
@@ -23,6 +24,7 @@ export function CampaignDetailPage() {
   const script = useApi<Script>(version.data ? `/scripts/${version.data.script_id}` : null);
   const [comments, setComments] = useState("");
   const action = useAction();
+  const ex = useExamples(campaign.data?.department_id);
 
   if (!campaign.data) return campaign.error ? <ErrorBox error={campaign.error} /> : <Loading />;
   const c = campaign.data;
@@ -87,12 +89,12 @@ export function CampaignDetailPage() {
             {
               title: "Choose a script",
               done: !!c.script_version_id,
-              text: "Pick what the AI should say and ask, in Settings below. Example: \"Supplier dispatch confirmation\".",
+              text: `Pick what the AI should say and ask, in Settings below. Example: "${ex.scriptName}".`,
             },
             {
               title: "Add contacts",
               done: c.contact_count > 0,
-              text: "Upload an Excel or CSV with a name and phone number on each row. The upload page shows an example and a sample file.",
+              text: `Add the ${ex.who} to call: upload an Excel or CSV with a name and phone number on each row, or fetch the list from a connected app. The upload page shows an example and a sample file.`,
               action: isDraft && can("imports:write") && (
                 <Link to={`/imports/new?campaign=${c.id}`}>
                   <Button>Upload contacts</Button>

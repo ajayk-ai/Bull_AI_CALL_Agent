@@ -14,6 +14,7 @@ const WORK: NavItem[] = [
   { to: "/imports", label: "Uploads", icon: "upload", permission: "contacts:read" },
   { to: "/scripts", label: "Scripts", icon: "script", permission: "scripts:read" },
   { to: "/dnc", label: "Do not call", icon: "ban", permission: "dnc:read" },
+  { to: "/integrations", label: "Connected apps", icon: "plug", permission: "integrations:manage" },
 ];
 
 const ADMIN: NavItem[] = [

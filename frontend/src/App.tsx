@@ -14,6 +14,7 @@ import { DepartmentsPage } from "./pages/Departments";
 import { DncPage } from "./pages/Dnc";
 import { ImportsPage } from "./pages/Imports";
 import { ImportWizardPage } from "./pages/ImportWizard";
+import { IntegrationsPage } from "./pages/Integrations";
 import { LoginPage } from "./pages/Login";
 import { ScriptEditorPage } from "./pages/ScriptEditor";
 import { ScriptsPage } from "./pages/Scripts";
@@ -39,6 +40,7 @@ function Routed() {
         <Route path="scripts/new" element={<ScriptEditorPage />} />
         <Route path="scripts/:scriptId/versions/:versionId" element={<ScriptEditorPage />} />
         <Route path="dnc" element={<DncPage />} />
+        <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="audit" element={<AuditPage />} />

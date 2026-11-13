@@ -35,6 +35,8 @@ class Permission(StrEnum):
     CAMPAIGNS_APPROVE = "campaigns:approve"
     CALLS_READ = "calls:read"
     CALLS_PLACE = "calls:place"
+    INTEGRATIONS_MANAGE = "integrations:manage"
+    API_KEYS_MANAGE = "api_keys:manage"
 
 
 # There are two roles. The admin creates every account and works across all departments. Everyone else
@@ -59,8 +61,20 @@ _USER = frozenset(
         Permission.CAMPAIGNS_APPROVE,
         Permission.CALLS_READ,
         Permission.CALLS_PLACE,
+        Permission.INTEGRATIONS_MANAGE,
+        Permission.API_KEYS_MANAGE,
     }
 )
+
+# What an API key may do, on top of what its owner may do. Keys never approve, place one-off calls, or manage
+# users, keys or connections: approval always stays with a person.
+_KEY_READ = frozenset(
+    {Permission.CAMPAIGNS_READ, Permission.CALLS_READ, Permission.CONTACTS_READ, Permission.SCRIPTS_READ}
+)
+API_KEY_ACCESS: dict[str, frozenset[Permission]] = {
+    "read": _KEY_READ,
+    "write": _KEY_READ | {Permission.CAMPAIGNS_WRITE, Permission.IMPORTS_WRITE, Permission.CONTACTS_WRITE},
+}
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.USER: _USER,

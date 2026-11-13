@@ -26,16 +26,16 @@ import {
 } from "../components/ui";
 import { api, query } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useExamples } from "../lib/examples";
 import { useAction, useApi } from "../lib/hooks";
 import type { Campaign, CampaignStatus, Page, Script } from "../lib/types";
 
 const PAGE_SIZE = 25;
 const STATUSES: CampaignStatus[] = ["draft", "pending_approval", "approved", "running", "paused", "completed", "cancelled"];
 
-const NAME_EXAMPLES = ["SCM delivery check - Nov week 2", "Vendor dispatch follow-up - Chennai", "Pending PO confirmation - November"];
-
 export function CampaignsPage() {
   const { can } = useAuth();
+  const ex = useExamples();
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
@@ -61,8 +61,11 @@ export function CampaignsPage() {
         title="How a campaign works"
         forceOpen={empty}
         steps={[
-          { title: "Create it", text: <>Give it a name and pick a script. Example: "SCM delivery check - Nov week 2" with the "Supplier dispatch confirmation" script.</> },
-          { title: "Add the people", text: <>Upload an Excel or CSV with a name and phone number on each row. Example: your list of suppliers with open POs.</> },
+          { title: "Create it", text: <>Give it a name and pick a script. Example: "{ex.campaignNames[0]}" with the "{ex.scriptName}" script.</> },
+          {
+            title: "Add the people",
+            text: <>Upload an Excel or CSV with a name and phone number on each row, or fetch it from a connected app. Example: your list of {ex.who}.</>,
+          },
           { title: "Approve", text: <>Check the settings and approve. Nothing is called until then.</> },
           { title: "Start calling", text: <>Press Start. The AI calls everyone during calling hours; answers appear under Calls.</> },
         ]}
@@ -142,6 +145,7 @@ function NewCampaign({ onCancel }: { onCancel: () => void }) {
   const [department, setDepartment] = useState("");
   const [form, setForm] = useState({ name: "", script_version_id: "", start_date: "", end_date: "" });
   const { busy, error, run } = useAction();
+  const ex = useExamples(department || null);
 
   const choices = versions.options.filter((v) => me?.role !== "admin" || !department || v.departmentId === department);
   const chosen = choices.find((v) => v.id === form.script_version_id);
@@ -183,11 +187,11 @@ function NewCampaign({ onCancel }: { onCancel: () => void }) {
         <div className="grid gap-4">
           <DepartmentPicker value={department} onChange={setDepartment} />
           <Field label="Campaign name">
-            <Input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={`e.g. ${NAME_EXAMPLES[0]}`} required />
+            <Input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={`e.g. ${ex.campaignNames[0]}`} required />
           </Field>
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
             <span>Examples:</span>
-            {NAME_EXAMPLES.map((n) => (
+            {ex.campaignNames.map((n) => (
               <button key={n} type="button" onClick={() => setForm({ ...form, name: n })} className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700 hover:bg-slate-200">
                 {n}
               </button>
@@ -236,7 +240,7 @@ function NewCampaign({ onCancel }: { onCancel: () => void }) {
         </div>
         <p className="mt-4 flex items-start gap-2 rounded-lg bg-sky-50 px-3 py-2.5 text-sm text-sky-900">
           <Icon name="info" className="mt-0.5 h-4 w-4 text-sky-500" />
-          After you create it, you will upload the people to call (an Excel or CSV file with names and phone numbers).
+          After you create it, you will add the {ex.who} to call: an Excel or CSV file with names and phone numbers, or a list from a connected app.
         </p>
       </Step>
     </Drawer>

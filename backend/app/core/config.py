@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     import_max_bytes: int = 10 * 1024 * 1024
     import_max_rows: int = 10_000
 
+    # ---- Connected apps (a department's CRM, ERP, HR system...) ----
+    # Connections may reach addresses on private networks (10.x, 192.168.x...), e.g. an on-premise ERP.
+    # Loopback and link-local (cloud metadata) addresses are always refused.
+    integrations_allow_private_networks: bool = False
+    integration_timeout_seconds: float = 20.0
+    # Sending call results: attempts per call, and seconds to wait before each retry.
+    integration_send_attempts: int = Field(3, ge=1, le=5)
+    integration_retry_seconds: list[float] = [2.0, 8.0, 20.0, 60.0]
+
     # Platform-wide cap on simultaneous calls; a campaign's own limit cannot exceed it.
     max_concurrent_calls: int = 5
     # Simultaneous calls the telephony line can carry. With one channel, calls go out one at a time: the

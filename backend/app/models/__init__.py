@@ -5,7 +5,7 @@ from app.models.calls import Call, CallEvent, CallQueueItem, Recording, Transcri
 from app.models.campaigns import Campaign, CampaignApproval, CampaignContact, CampaignImport
 from app.models.contacts import ConsentRecord, Contact, DoNotCall
 from app.models.extraction import ExtractedResult, ExtractionFieldEvidence, FollowupTask
-from app.models.integrations import IntegrationConfig, VoiceProviderAccount
+from app.models.integrations import ApiKey, IntegrationConfig, VoiceProviderAccount
 from app.models.org import Department, User
 from app.models.scripts import Script, ScriptVersion
 
@@ -25,6 +25,7 @@ __all__ = [
     "ExtractedResult",
     "ExtractionFieldEvidence",
     "FollowupTask",
+    "ApiKey",
     "IntegrationConfig",
     "Recording",
     "Script",

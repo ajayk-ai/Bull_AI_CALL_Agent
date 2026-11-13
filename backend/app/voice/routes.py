@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.db.session import get_sessionmaker
 from app.providers.telephony.frejun import FreJunMediaStream
-from app.services import calls, extraction
+from app.services import calls, extraction, integrations
 from app.voice import tokens
 from app.voice.deps import EngineDep, TelephonyDep
 from app.voice.session import CallSession
@@ -103,6 +103,11 @@ async def _after_call(call_id, provider_call_id: str | None, result, telephony) 
             await extraction.extract(session, call_id)
     except Exception:
         log.exception("Extraction for call %s failed", call_id)
+    # Then hand the result to the department's connected apps. Their failures never affect the call either.
+    try:
+        await integrations.deliver_call_results(call_id)
+    except Exception:
+        log.exception("Sending call %s to connected apps failed", call_id)
 
 
 async def pending_post_call_work() -> None:

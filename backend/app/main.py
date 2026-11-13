@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1 import auth, calls, campaigns, contacts, health, imports, org, scripts
+from app.api.v1 import api_keys, auth, calls, campaigns, contacts, health, imports, integrations, mcp, org, scripts
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
@@ -122,7 +122,7 @@ def _create_inner(mounted: bool) -> FastAPI:
         return response
 
     api = APIRouter(prefix="/api/v1")
-    for module in (health, auth, org, contacts, imports, scripts, campaigns, calls):
+    for module in (health, auth, org, contacts, imports, scripts, campaigns, calls, integrations, api_keys, mcp):
         api.include_router(module.router)
     app.include_router(api)
     app.include_router(voice_routes.router)

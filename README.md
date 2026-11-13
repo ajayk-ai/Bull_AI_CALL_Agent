@@ -209,6 +209,41 @@ contacts are skipped. Campaign page: **Start calling**, **Pause** (the call in p
 6. **One by one:** a campaign with a few internal test contacts (upload or add them, each with its PO lines),
    submit, approve, then **Start calling**. The dialer calls them one after another.
 
+## Connected apps
+
+Every department can link its own systems under **Connected apps** (`/integrations`), without code changes:
+
+- **Bring people in** (`fetch_contacts`): the app GETs a JSON list from the department's CRM, ERP or HR system.
+  The records (nested fields flattened to columns such as `customer.name`) go through the same column matching,
+  duplicate and do-not-call checks as an uploaded file: Upload contacts > Connected app.
+- **Send results out** (`send_results`): after each call is analysed, the app POSTs the result as JSON (sample:
+  `GET /api/v1/integrations/sample-result`). With a signing secret, verify
+  `X-BullCall-Signature = "sha256=" + hex(HMAC_SHA256(secret, X-BullCall-Timestamp + "." + body))`.
+  Server errors and timeouts are retried; phone numbers are always masked.
+
+Sign-in can be a bearer token, an API key header or user name and password; secrets are stored encrypted and never
+returned. Connections refuse loopback and link-local addresses, and private networks unless
+`INTEGRATIONS_ALLOW_PRIVATE_NETWORKS=true`.
+
+### API keys and MCP (other systems calling us)
+
+Under Connected apps, anyone can create an **API key** (`bmk_...`, shown once; only its SHA-256 is stored). A key
+acts as its creator, in their department, limited to its access level:
+
+- **read**: campaigns, scripts, calls and results, contacts.
+- **write**: also create campaigns, add contacts, submit for approval, start / pause / resume.
+
+Keys can never approve, place one-off calls, or reach accounts, keys, connected apps, departments or the audit
+log. They stop working when revoked, expired, or when the owner is deactivated or changes department. Send
+`Authorization: Bearer bmk_...` (or `X-API-Key: bmk_...`) to the REST API (`/api/v1/docs`).
+
+The **MCP server** is at `/api/v1/mcp` (Streamable HTTP, stateless JSON; same keys). Tools: `list_scripts`,
+`list_campaigns`, `get_campaign`, `list_calls`, `get_call_result`, and with a write key `create_campaign`,
+`add_contacts` (same checks as an upload; `dry_run` first), `submit_campaign`, `control_campaign`. Claude Code:
+
+    claude mcp add --transport http bull-ai-calling https://<host>/aicall/api/v1/mcp \
+      --header "Authorization: Bearer bmk_..."
+
 ## Security notes
 
 - Phone numbers are stored encrypted (Fernet, `DATA_ENCRYPTION_KEY`) with a keyed HMAC (`PHONE_HASH_KEY`) for

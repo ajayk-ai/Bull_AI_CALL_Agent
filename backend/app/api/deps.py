@@ -15,7 +15,8 @@ from app.core.paths import route_path
 from app.core.security import decode_token
 from app.db.session import get_session
 from app.models.org import User
-from app.rbac.permissions import Permission, has_permission
+from app.rbac.permissions import API_KEY_ACCESS, Permission, has_permission
+from app.services import api_keys
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -30,14 +31,38 @@ class PasswordChangeRequired(Forbidden):
     code = "password_change_required"
 
 
+# The only routes an API key can reach: the calling work and MCP. Accounts, keys, connected apps, departments and
+# the audit log always need a person signed in.
+_API_KEY_ROUTES = (
+    "/api/v1/campaigns",
+    "/api/v1/calls",
+    "/api/v1/scripts",
+    "/api/v1/script-versions",
+    "/api/v1/contacts",
+    "/api/v1/imports",
+    "/api/v1/mcp",
+)
+
+
+def _api_key_route(path: str) -> bool:
+    return any(path == route or path.startswith(route + "/") for route in _API_KEY_ROUTES)
+
+
 async def get_current_user(
     request: Request,
     session: SessionDep,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> User:
-    if credentials is None:
+    token = credentials.credentials if credentials else request.headers.get("x-api-key")
+    if not token:
         raise Unauthorized("Not authenticated")
-    payload = decode_token(credentials.credentials, "access")
+    if api_keys.looks_like_key(token):
+        if not _api_key_route(route_path(request.scope)):
+            raise Forbidden("API keys cannot use this endpoint; sign in as a person instead")
+        key, user = await api_keys.authenticate(session, token)
+        request.state.api_key = key
+        return user
+    payload = decode_token(token, "access")
     user = await session.get(User, uuid.UUID(payload["sub"]))
     if user is None or not user.is_active or user.token_version != payload["ver"]:
         raise Unauthorized("Session is no longer valid")
@@ -49,9 +74,18 @@ async def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+def allowed(request: Request, user: User, permission: Permission) -> bool:
+    """The user's role allows it and, for an API key, so does the key's access level."""
+    key = getattr(request.state, "api_key", None)
+    return has_permission(user, permission) and (key is None or permission in API_KEY_ACCESS[key.access])
+
+
 def require(permission: Permission) -> Callable:
-    async def _check(user: CurrentUser) -> User:
-        if not has_permission(user, permission):
+    async def _check(request: Request, user: CurrentUser) -> User:
+        if not allowed(request, user, permission):
+            key = getattr(request.state, "api_key", None)
+            if key is not None:
+                raise Forbidden(f"This API key's access does not include {permission}")
             raise Forbidden(f"Missing permission: {permission}")
         return user
 
